@@ -121,7 +121,34 @@ See [DOCKER_TESTING.md](DOCKER_TESTING.md) for detailed testing procedures.
 ### Option 2: NPM (Development/Local)
 
 ```bash
+# Install globally
 npm install -g code-executor-mcp
+
+# Or install locally for development
+git clone https://github.com/aberemia24/code-executor-MCP.git
+cd code-executor-mcp
+npm install
+npm run build
+```
+
+### Running the Server
+
+**After global install:**
+```bash
+code-executor-mcp
+```
+
+**Local development:**
+```bash
+npm run server  # Build + start
+# or
+npm start  # Start (requires build first)
+```
+
+**Link for local CLI testing:**
+```bash
+npm link  # Creates global symlink
+code-executor-mcp  # Run from anywhere
 ```
 
 ### Prerequisites
