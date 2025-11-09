@@ -50,8 +50,7 @@ class CodeExecutorServer {
     // Rate limiter will be initialized after config is loaded
     this.rateLimiter = null;
 
-    // Register tools
-    this.registerTools();
+    // Note: registerTools() is called in start() after config initialization
   }
 
   /**
@@ -185,7 +184,7 @@ Example:
 
           // Validate security
           this.securityValidator.validateAllowlist(input.allowedTools);
-          this.securityValidator.validatePermissions(input.permissions);
+          await this.securityValidator.validatePermissions(input.permissions);
           const codeValidation = this.securityValidator.validateCode(input.code);
 
           if (!codeValidation.valid) {
@@ -329,7 +328,7 @@ Example:
 
             // Validate security
             this.securityValidator.validateAllowlist(input.allowedTools);
-            this.securityValidator.validatePermissions(input.permissions);
+            await this.securityValidator.validatePermissions(input.permissions);
             const codeValidation = this.securityValidator.validateCode(input.code);
 
             if (!codeValidation.valid) {
@@ -454,6 +453,9 @@ Returns:
     // Initialize configuration
     console.error('Loading configuration...');
     await initConfig();
+
+    // Register tools (now that config is initialized)
+    this.registerTools();
 
     // Initialize rate limiter if enabled
     if (isRateLimitEnabled()) {

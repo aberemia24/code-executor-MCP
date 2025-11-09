@@ -62,8 +62,9 @@ export class MCPClientPool {
       // Track failures
       const failures = results.filter(r => r.status === 'rejected');
 
-      // If ALL servers failed, throw error
-      if (failures.length === serverNames.length) {
+      // If ALL servers failed (and there were servers to connect to), throw error
+      // Allow zero servers as valid configuration (code-executor can run standalone)
+      if (serverNames.length > 0 && failures.length === serverNames.length) {
         const errorMessages = results
           .map((r, i) => {
             if (r.status === 'rejected') {
@@ -77,6 +78,11 @@ export class MCPClientPool {
         throw new Error(
           `All MCP server connections failed. Check .mcp.json configuration:\n${errorMessages}`
         );
+      }
+
+      // If zero servers configured, log info message
+      if (serverNames.length === 0) {
+        console.error('ℹ️  No other MCP servers configured (code-executor running standalone)');
       }
 
       // If some servers failed, warn but continue
