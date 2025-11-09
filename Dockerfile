@@ -58,8 +58,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Use tini as init system (proper signal handling, zombie reaping)
 ENTRYPOINT ["/sbin/tini", "--"]
 
-# Start MCP server
-CMD ["node", "dist/index.js"]
+# Start MCP server (create /tmp/code-executor first as it may be overlayed by tmpfs)
+CMD ["sh", "-c", "mkdir -p /tmp/code-executor && exec node dist/index.js"]
 
 # Metadata
 LABEL maintainer="code-executor-mcp" \
