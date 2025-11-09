@@ -51,6 +51,35 @@ await thinkdeep(step, step_number, total_steps, ...)
 
 Wrappers are auto-generated from `tools/list` schemas, not manually written.
 
+## Validation
+
+**Runtime parameter validation with clear error messages:**
+
+All MCP tool calls are validated against live schemas before execution. If parameters are invalid, you get a detailed error explaining what's wrong:
+
+```
+Parameter validation failed for "mcp__zen__consensus"
+
+Errors:
+  - Missing required parameters: models
+  - Unexpected parameters: model
+
+Expected parameters:
+  Required:
+    • prompt: string - The prompt to analyze
+    • models: array<string> - List of model IDs
+  Optional:
+    • temperature: number - Sampling temperature
+
+You provided:
+  { "prompt": "...", "model": "gpt-4" }
+```
+
+**Benefits:**
+- 🎯 Catch errors before MCP call (faster feedback)
+- 📚 See expected schema on failure (self-documenting)
+- 🔒 Zero token overhead (validation server-side, schemas cached)
+
 ## Features
 
 - **Executors:** TypeScript (Deno), Python

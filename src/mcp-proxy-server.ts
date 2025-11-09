@@ -9,6 +9,8 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { normalizeError } from './utils.js';
 import { AllowlistValidator, ToolCallTracker } from './proxy-helpers.js';
+import { SchemaCache } from './schema-cache.js';
+import { SchemaValidator } from './schema-validator.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 
 /**
@@ -37,6 +39,8 @@ export class MCPProxyServer {
   private authToken: string;
   private validator: AllowlistValidator;
   private tracker: ToolCallTracker;
+  private schemaCache: SchemaCache;
+  private schemaValidator: SchemaValidator;
 
   /**
    * Create MCP proxy server
@@ -52,6 +56,8 @@ export class MCPProxyServer {
   ) {
     this.validator = new AllowlistValidator(allowedTools);
     this.tracker = new ToolCallTracker();
+    this.schemaCache = new SchemaCache(mcpClientPool);
+    this.schemaValidator = new SchemaValidator();
     // Generate cryptographically secure random token (32 bytes = 64 hex chars)
     this.authToken = crypto.randomBytes(32).toString('hex');
   }
@@ -62,9 +68,14 @@ export class MCPProxyServer {
    * SECURITY: Returns both port and authentication token.
    * The sandbox code will connect to localhost:<port> with Bearer token.
    *
+   * Pre-populates schema cache before starting to ensure fast validation.
+   *
    * @returns Object with port number and auth token
    */
   async start(): Promise<{ port: number; authToken: string }> {
+    // Pre-populate schema cache (loads from disk + fetches missing/expired)
+    await this.schemaCache.prePopulate();
+
     return new Promise((resolve, reject) => {
       this.server = http.createServer(async (req, res) => {
         // Only accept POST requests
@@ -107,6 +118,23 @@ export class MCPProxyServer {
               suggestion: `Add '${toolName}' to allowedTools array`
             }));
             return;
+          }
+
+          // Validate parameters against schema
+          const schema = await this.schemaCache.getToolSchema(toolName);
+          if (schema) {
+            const validation = this.schemaValidator.validate(params, schema);
+            if (!validation.valid) {
+              const errorMessage = this.schemaValidator.formatError(
+                toolName,
+                params,
+                schema,
+                validation
+              );
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: errorMessage }));
+              return;
+            }
           }
 
           // Track tool call

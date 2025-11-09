@@ -301,6 +301,53 @@ export class MCPClientPool {
   }
 
   /**
+   * Get full tool schema including inputSchema
+   *
+   * @param toolName - Full MCP tool name (e.g., 'mcp__zen__codereview')
+   * @returns Full tool schema with inputSchema, or null if not found
+   */
+  async getToolSchema(toolName: string): Promise<{
+    name: string;
+    description?: string;
+    inputSchema: any;
+  } | null> {
+    if (!this.initialized) {
+      throw new Error('MCPClientPool not initialized. Call initialize() first.');
+    }
+
+    // Check if tool exists in cache
+    const toolInfo = this.toolCache.get(toolName);
+    if (!toolInfo) {
+      return null;
+    }
+
+    // Get client for this server
+    const client = this.clients.get(toolInfo.server);
+    if (!client) {
+      throw new Error(`No client connected for server: ${toolInfo.server}`);
+    }
+
+    try {
+      // Fetch full tool list from server (includes inputSchema)
+      const tools = await client.listTools();
+
+      // Find the specific tool
+      const tool = tools.tools.find(t => t.name === toolInfo.name);
+      if (!tool) {
+        return null;
+      }
+
+      return {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      };
+    } catch (error) {
+      throw normalizeError(error, `Failed to fetch schema for ${toolName}`);
+    }
+  }
+
+  /**
    * Check if a tool is available
    */
   hasTool(toolName: string): boolean {

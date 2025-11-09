@@ -14,10 +14,12 @@
     "server": "npm run build && node dist/index.js",
     "generate-wrappers": "npm run build && node dist/wrapper-generator.js",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "files": [
     "dist",
@@ -54,7 +56,10 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
+    "@typescript-eslint/eslint-plugin": "^8.46.3",
+    "@typescript-eslint/parser": "^8.46.3",
     "@vitest/coverage-v8": "^4.0.8",
+    "eslint": "^9.39.1",
     "typescript": "^5.6.3",
     "vitest": "^4.0.8"
   },
