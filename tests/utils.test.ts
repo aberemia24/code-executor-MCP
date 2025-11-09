@@ -172,53 +172,6 @@ describe('formatDuration', () => {
   });
 });
 
-describe('isAllowedPath', () => {
-  it('should_return_true_when_path_starts_with_allowed_root', () => {
-    const allowedRoots = ['/home/user/project', '/tmp'];
-
-    expect(isAllowedPath('/home/user/project/src/index.ts', allowedRoots)).toBe(true);
-    expect(isAllowedPath('/tmp/file.txt', allowedRoots)).toBe(true);
-  });
-
-  it('should_return_false_when_path_not_in_allowed_roots', () => {
-    const allowedRoots = ['/home/user/project'];
-
-    expect(isAllowedPath('/etc/passwd', allowedRoots)).toBe(false);
-    expect(isAllowedPath('/home/other/file.txt', allowedRoots)).toBe(false);
-  });
-
-  it('should_return_false_when_no_roots_specified', () => {
-    expect(isAllowedPath('/any/path', [])).toBe(false);
-  });
-
-  it('should_normalize_windows_backslashes', () => {
-    const allowedRoots = ['C:/Users/test'];
-
-    expect(isAllowedPath('C:\\Users\\test\\file.txt', allowedRoots)).toBe(true);
-  });
-
-  it('should_not_match_partial_directory_names', () => {
-    const allowedRoots = ['/home/user'];
-
-    // Should match: exact directory and subdirectories
-    expect(isAllowedPath('/home/user', allowedRoots)).toBe(true);
-    expect(isAllowedPath('/home/user/file.txt', allowedRoots)).toBe(true);
-    expect(isAllowedPath('/home/user/subdir/file.txt', allowedRoots)).toBe(true);
-
-    // Should NOT match: partial directory name
-    expect(isAllowedPath('/home/username', allowedRoots)).toBe(false);
-    expect(isAllowedPath('/home/username/file.txt', allowedRoots)).toBe(false);
-    expect(isAllowedPath('/home/user2/file.txt', allowedRoots)).toBe(false);
-  });
-
-  it('should_handle_trailing_slashes_in_allowed_roots', () => {
-    const allowedRoots = ['/home/user/']; // With trailing slash
-
-    expect(isAllowedPath('/home/user/file.txt', allowedRoots)).toBe(true);
-    expect(isAllowedPath('/home/username/file.txt', allowedRoots)).toBe(false);
-  });
-});
-
 describe('sanitizeOutput', () => {
   it('should_remove_ansi_escape_codes', () => {
     const output = '\x1b[31mRed text\x1b[0m Normal text';

@@ -5,12 +5,37 @@
 import * as fs from 'fs/promises';
 import { isAuditLogEnabled, getAuditLogPath, getAllowedReadPaths } from './config.js';
 import { isValidMCPToolName, isAllowedPath, hashCode } from './utils.js';
+import { validateNetworkPermissions, isBlockedHost } from './network-security.js';
 import type { AuditLogEntry, CodeValidationResult, SandboxPermissions } from './types.js';
 
 /**
  * Dangerous code patterns to block
  *
- * Comprehensive patterns to prevent code injection and sandbox escapes.
+ * ⚠️ **CRITICAL SECURITY WARNING** ⚠️
+ *
+ * This pattern-based blocking is **NOT A SECURITY BOUNDARY** and provides only
+ * **DEFENSE-IN-DEPTH** protection. It can be trivially bypassed using:
+ *
+ * - String concatenation: `global['ev'+'al']`, `__import__('o'+'s')`
+ * - Unicode escapes: `eval\u0028`, `\u0065val`
+ * - Computed properties: `globalThis['pro'+'cess']`
+ * - Character codes: `String.fromCharCode(101,118,97,108)` // "eval"
+ * - Template literals, comments, and other obfuscation
+ *
+ * **DO NOT RELY ON THIS FOR SECURITY**
+ *
+ * Real security MUST come from:
+ * 1. Deno sandbox permissions (--no-env, --allow-read, --allow-write, --allow-net)
+ * 2. Resource limits (--v8-flags=--max-old-space-size)
+ * 3. Process isolation (Docker/gVisor/Firecracker)
+ * 4. Network policies (block localhost/private IPs)
+ * 5. MCP tool allowlists with minimal privileges
+ *
+ * This validation helps catch **ACCIDENTAL** misuse and provides audit trail,
+ * but assume attackers can bypass it. Design security assuming code can execute
+ * anything within the sandbox's permission set.
+ *
+ * Comprehensive patterns to detect dangerous operations.
  * Covers both JavaScript/TypeScript and Python dangerous patterns.
  */
 const DANGEROUS_PATTERNS = [
@@ -62,14 +87,16 @@ export class SecurityValidator {
 
   /**
    * Validate sandbox permissions
+   *
+   * SECURITY: Now async to support realpath() symlink resolution in isAllowedPath
    */
-  validatePermissions(permissions: SandboxPermissions): void {
+  async validatePermissions(permissions: SandboxPermissions): Promise<void> {
     const allowedProjects = getAllowedReadPaths();
 
     // Validate read paths
     if (permissions.read) {
       for (const path of permissions.read) {
-        if (!isAllowedPath(path, allowedProjects)) {
+        if (!(await isAllowedPath(path, allowedProjects))) {
           throw new Error(
             `Read path not allowed: ${path}. ` +
             `Must be within: ${allowedProjects.join(', ')}`
@@ -83,7 +110,7 @@ export class SecurityValidator {
       for (const path of permissions.write) {
         // Write paths are more restricted - only /tmp by default
         const allowedWritePaths = ['/tmp', ...allowedProjects];
-        if (!isAllowedPath(path, allowedWritePaths)) {
+        if (!(await isAllowedPath(path, allowedWritePaths))) {
           throw new Error(
             `Write path not allowed: ${path}. ` +
             `Must be within: ${allowedWritePaths.join(', ')}`
@@ -92,8 +119,9 @@ export class SecurityValidator {
       }
     }
 
-    // Validate network hosts (basic format check)
+    // Validate network hosts (format + SSRF protection)
     if (permissions.net) {
+      // Basic format validation
       for (const host of permissions.net) {
         if (!/^[a-zA-Z0-9.-]+(:[0-9]+)?$/.test(host)) {
           throw new Error(
@@ -102,22 +130,48 @@ export class SecurityValidator {
           );
         }
       }
+
+      // SECURITY: SSRF protection - validate against blocked hosts
+      const networkValidation = validateNetworkPermissions(permissions.net);
+      if (!networkValidation.valid) {
+        throw new Error(
+          `Network permissions include blocked hosts for SSRF protection: ` +
+          `${networkValidation.blockedHosts.join(', ')}. ` +
+          `Blocked categories: localhost (except for MCP proxy), private networks ` +
+          `(10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), cloud metadata endpoints ` +
+          `(169.254.169.254, metadata.google.internal).`
+        );
+      }
+
+      // Log warnings for informational purposes
+      if (networkValidation.warnings.length > 0) {
+        for (const warning of networkValidation.warnings) {
+          console.warn('[SECURITY]', warning);
+        }
+      }
     }
   }
 
   /**
    * Validate code for dangerous patterns
+   *
+   * ⚠️ SECURITY NOTE: This is defense-in-depth only, NOT a security boundary.
+   * Attackers can bypass regex patterns. Real security comes from sandbox
+   * permissions, resource limits, and process isolation.
+   *
+   * This helps catch accidental misuse and provides audit trail.
    */
   validateCode(code: string): CodeValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check for dangerous patterns
+    // Check for dangerous patterns (defense-in-depth, not security boundary)
     for (const pattern of DANGEROUS_PATTERNS) {
       if (pattern.test(code)) {
+        // SECURITY: Use generic error message to avoid revealing exact pattern
         errors.push(
-          `Dangerous pattern detected: ${pattern.source}. ` +
-          `This pattern is blocked for security reasons.`
+          `Code contains potentially dangerous pattern. ` +
+          `This pattern is blocked as defense-in-depth protection.`
         );
       }
     }

@@ -20,18 +20,25 @@ import type { MCPClientPool } from './mcp-client-pool.js';
  *
  * This code is prepended to user's Python code to provide MCP tool access.
  */
-function getPythonWrapperCode(proxyPort: number, userCodeFile: string): string {
+function getPythonWrapperCode(proxyPort: number, authToken: string, userCodeFile: string): string {
   return `import json
 import sys
 import urllib.request
 import urllib.parse
 
 def call_mcp_tool(tool_name: str, params: dict) -> any:
-    """Call an MCP tool through the proxy server"""
+    """Call an MCP tool through the proxy server with authentication"""
     url = 'http://localhost:${proxyPort}'
     data = json.dumps({'toolName': tool_name, 'params': params}).encode('utf-8')
 
-    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${authToken}'
+        }
+    )
 
     try:
         with urllib.request.urlopen(req) as response:
@@ -81,9 +88,12 @@ export async function executePythonInSandbox(
   // Start MCP proxy server (shared with TypeScript executor)
   const proxyServer = new MCPProxyServer(mcpClientPool, options.allowedTools);
   let proxyPort: number;
+  let authToken: string;
 
   try {
-    proxyPort = await proxyServer.start();
+    const proxyInfo = await proxyServer.start();
+    proxyPort = proxyInfo.port;
+    authToken = proxyInfo.authToken;
   } catch (error) {
     if (streamingProxy) {
       await streamingProxy.stop();
@@ -106,8 +116,21 @@ export async function executePythonInSandbox(
     await fs.writeFile(userCodeFile, options.code, 'utf-8');
     tempFileCreated = true;
 
+    // SECURITY: Verify temp file integrity (defense-in-depth)
+    // Ensures file wasn't modified between write and execution
+    const writtenContent = await fs.readFile(userCodeFile, 'utf-8');
+    const originalHash = crypto.createHash('sha256').update(options.code).digest('hex');
+    const writtenHash = crypto.createHash('sha256').update(writtenContent).digest('hex');
+
+    if (originalHash !== writtenHash) {
+      throw new Error(
+        'Temp file integrity check failed - file may have been tampered with. ' +
+        'This is a critical security violation.'
+      );
+    }
+
     // Create wrapper code that injects call_mcp_tool() and executes user code
-    const wrappedCode = getPythonWrapperCode(proxyPort, userCodeFile);
+    const wrappedCode = getPythonWrapperCode(proxyPort, authToken, userCodeFile);
 
     // Build Python arguments
     const pythonArgs = ['-c', wrappedCode];

@@ -42,9 +42,12 @@ export async function executeTypescriptInSandbox(
   // Start MCP proxy server (will track tool calls)
   const proxyServer = new MCPProxyServer(mcpClientPool, options.allowedTools);
   let proxyPort: number;
+  let authToken: string;
 
   try {
-    proxyPort = await proxyServer.start();
+    const proxyInfo = await proxyServer.start();
+    proxyPort = proxyInfo.port;
+    authToken = proxyInfo.authToken;
   } catch (error) {
     if (streamingProxy) {
       await streamingProxy.stop();
@@ -68,13 +71,29 @@ export async function executeTypescriptInSandbox(
     await fs.writeFile(userCodeFile, options.code, 'utf-8');
     tempFileCreated = true;
 
+    // SECURITY: Verify temp file integrity (defense-in-depth)
+    // Ensures file wasn't modified between write and execution
+    const writtenContent = await fs.readFile(userCodeFile, 'utf-8');
+    const originalHash = crypto.createHash('sha256').update(options.code).digest('hex');
+    const writtenHash = crypto.createHash('sha256').update(writtenContent).digest('hex');
+
+    if (originalHash !== writtenHash) {
+      throw new Error(
+        'Temp file integrity check failed - file may have been tampered with. ' +
+        'This is a critical security violation.'
+      );
+    }
+
     // Create wrapper code that injects callMCPTool() and imports user code
     const wrappedCode = `
-// Injected callMCPTool function
+// Injected callMCPTool function with authentication
 globalThis.callMCPTool = async (toolName: string, params: unknown) => {
   const response = await fetch('http://localhost:${proxyPort}', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${authToken}'
+    },
     body: JSON.stringify({ toolName, params })
   });
 
@@ -94,9 +113,13 @@ await import('file://${userCodeFile}');
     // Build Deno arguments
     const denoArgs = ['run'];
 
-    // Add permissions
-    // Always allow TMPDIR env var (required for temp file resolution)
-    denoArgs.push('--allow-env=TMPDIR');
+    // SECURITY: Block environment variable access to prevent secret leakage
+    // (AWS_ACCESS_KEY_ID, DATABASE_URL, etc.)
+    denoArgs.push('--no-env');
+
+    // SECURITY: Add V8 memory limit to prevent memory exhaustion attacks
+    // Limits heap to 128MB - prevents allocation bombs
+    denoArgs.push('--v8-flags=--max-old-space-size=128');
 
     // Always allow /tmp for temp file storage
     const readPaths = [...new Set([...(options.permissions.read ?? []), '/tmp'])];
