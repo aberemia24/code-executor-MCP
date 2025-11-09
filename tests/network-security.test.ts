@@ -381,4 +381,107 @@ describe('Network Security Edge Cases', () => {
       }
     });
   });
+
+  describe('Alternative IP encoding detection', () => {
+    describe('Decimal IP encoding', () => {
+      it('should_block_decimal_encoded_localhost', () => {
+        expect(isBlockedHost('2130706433')).toBe(true);  // 127.0.0.1
+      });
+
+      it('should_block_decimal_encoded_private_ips', () => {
+        expect(isBlockedHost('167772160')).toBe(true);   // 10.0.0.0
+        expect(isBlockedHost('3232235520')).toBe(true);  // 192.168.0.0
+        expect(isBlockedHost('2886729728')).toBe(true);  // 172.16.0.0
+      });
+
+      it('should_block_short_decimal_ips', () => {
+        expect(isBlockedHost('167772160')).toBe(true);   // 10.0.0.0 (9 digits)
+        expect(isBlockedHost('2130706433')).toBe(true);  // 127.0.0.1 (10 digits)
+      });
+
+      it('should_block_decimal_cloud_metadata', () => {
+        expect(isBlockedHost('2852039166')).toBe(true);  // 169.254.169.254
+      });
+    });
+
+    describe('Octal IP encoding', () => {
+      it('should_block_octal_encoded_localhost', () => {
+        expect(isBlockedHost('0177.0.0.1')).toBe(true);
+        expect(isBlockedHost('0177.0000.0000.0001')).toBe(true);
+      });
+
+      it('should_block_octal_encoded_private_ips', () => {
+        expect(isBlockedHost('012.0.0.1')).toBe(true);     // 10.0.0.1
+        expect(isBlockedHost('0300.0250.0.1')).toBe(true); // 192.168.0.1
+      });
+    });
+
+    describe('Hexadecimal IP encoding', () => {
+      it('should_block_hex_encoded_localhost', () => {
+        expect(isBlockedHost('0x7f.0.0.1')).toBe(true);
+        expect(isBlockedHost('0x7f000001')).toBe(true);
+      });
+
+      it('should_block_short_hex_ips', () => {
+        expect(isBlockedHost('0xa000000')).toBe(true);  // 10.0.0.0 (7 hex digits)
+        expect(isBlockedHost('0x7f000001')).toBe(true); // 127.0.0.1 (8 hex digits)
+      });
+
+      it('should_block_hex_encoded_private_ips', () => {
+        expect(isBlockedHost('0xa.0.0.1')).toBe(true);     // 10.0.0.1
+        expect(isBlockedHost('0xc0.0xa8.0.1')).toBe(true); // 192.168.0.1
+      });
+
+      it('should_block_hex_cloud_metadata', () => {
+        expect(isBlockedHost('0xa9fea9fe')).toBe(true); // 169.254.169.254 (full hex)
+      });
+    });
+
+    describe('Shorthand IP notation', () => {
+      it('should_block_shorthand_localhost', () => {
+        expect(isBlockedHost('127.1')).toBe(true);
+      });
+
+      it('should_block_shorthand_private_ips', () => {
+        expect(isBlockedHost('10.1')).toBe(true);
+        expect(isBlockedHost('192.168.1')).toBe(true);
+      });
+    });
+  });
+
+  describe('IPv6 with alternative IP encodings', () => {
+    it('should_block_ipv6_mapped_decimal_localhost', () => {
+      expect(isBlockedHost('::ffff:2130706433')).toBe(true);
+    });
+
+    it('should_block_ipv6_mapped_octal_localhost', () => {
+      expect(isBlockedHost('::ffff:0177.0.0.1')).toBe(true);
+    });
+
+    it('should_block_ipv6_mapped_hex_localhost', () => {
+      expect(isBlockedHost('::ffff:0x7f.0.0.1')).toBe(true);
+    });
+
+    it('should_block_ipv6_mapped_private_ips', () => {
+      expect(isBlockedHost('::ffff:167772160')).toBe(true);   // 10.0.0.0
+      expect(isBlockedHost('::ffff:012.0.0.1')).toBe(true);   // 10.0.0.1 (octal)
+      expect(isBlockedHost('::ffff:0xa.0.0.1')).toBe(true);   // 10.0.0.1 (hex)
+    });
+
+    it('should_block_ipv6_with_port', () => {
+      // Critical: Test the extractIPv6() bug fix
+      expect(isBlockedHost('::ffff:127.0.0.1:8080')).toBe(true);
+      expect(isBlockedHost('[::ffff:127.0.0.1]:8080')).toBe(true);
+      expect(isBlockedHost('::ffff:10.0.0.1:3000')).toBe(true);
+      expect(isBlockedHost('::1:8080')).toBe(true);
+      expect(isBlockedHost('[::1]:8080')).toBe(true);
+    });
+
+    it('should_preserve_ipv6_without_port', () => {
+      // Ensure we don't break valid IPv6 addresses
+      expect(isBlockedHost('::1')).toBe(true);
+      expect(isBlockedHost('fe80::1')).toBe(true);
+      expect(isBlockedHost('::ffff:127.0.0.1')).toBe(true);
+    });
+  });
 });

@@ -65,9 +65,14 @@ const BLOCKED_IP_PATTERNS = {
  * normalizeIPEncoding('google.com') // 'google.com' (unchanged)
  */
 function normalizeIPEncoding(host: string): string {
-  // Decimal IP (e.g., 2130706433 = 127.0.0.1)
-  // Must be 8-10 digits to avoid matching ports or other numbers
-  if (/^\d{8,10}$/.test(host)) {
+  // Input validation
+  if (!host || typeof host !== 'string') {
+    return host || '';
+  }
+
+  // Decimal IP (e.g., 2130706433 = 127.0.0.1, 16777216 = 1.0.0.0)
+  // 1-10 digits to handle all valid decimal IPs including short forms
+  if (/^\d{1,10}$/.test(host)) {
     const num = parseInt(host, 10);
     // Validate it's in valid IP range (0 to 4294967295)
     if (num >= 0 && num <= 0xFFFFFFFF) {
@@ -75,8 +80,9 @@ function normalizeIPEncoding(host: string): string {
     }
   }
 
-  // Full hex IP (e.g., 0x7f000001 = 127.0.0.1)
-  if (/^0x[0-9a-f]{6,8}$/i.test(host)) {
+  // Full hex IP (e.g., 0x7f000001 = 127.0.0.1, 0x7f = 0.0.0.127)
+  // 1-8 hex digits to handle all valid hex IPs including short forms
+  if (/^0x[0-9a-f]{1,8}$/i.test(host)) {
     const num = parseInt(host, 16);
     if (num >= 0 && num <= 0xFFFFFFFF) {
       return `${(num >>> 24) & 0xFF}.${(num >>> 16) & 0xFF}.${(num >>> 8) & 0xFF}.${num & 0xFF}`;
@@ -226,23 +232,27 @@ function isIPv6Format(str: string): boolean {
  * Note: Only attempts to strip ports for clearly formatted cases.
  * For ambiguous cases (like ::1 where 1 could be part of address),
  * returns the original string.
+ *
+ * SECURITY FIX: Use lastIndexOf + substring to preserve consecutive colons
  */
 function extractIPv6(str: string): string {
   // Remove brackets
   str = str.replace(/[\[\]]/g, '');
 
-  // Only try to extract port if it's clearly a port (> 1000 typically)
-  // This avoids mistaking parts of IPv6 addresses as ports
-  const parts = str.split(':');
-  if (parts.length > 2) {
-    // Could be IPv6 with or without port
-    // Check if last part is a large number (likely a port >= 1000)
-    const lastPart = parts[parts.length - 1];
-    if (lastPart && /^\d{4,5}$/.test(lastPart)) {
-      const portNum = parseInt(lastPart, 10);
-      // Port range 1000-65535
+  // Find last colon (potential port separator)
+  const lastColonIdx = str.lastIndexOf(':');
+
+  if (lastColonIdx !== -1) {
+    const afterLastColon = str.substring(lastColonIdx + 1);
+
+    // If last segment is 4-5 digits and looks like a port
+    if (/^\d{4,5}$/.test(afterLastColon)) {
+      const portNum = parseInt(afterLastColon, 10);
+      // Port range 1000-65535 (avoid mistaking ::1 as ::1 with port 1)
       if (portNum >= 1000 && portNum <= 65535) {
-        return parts.slice(0, -1).join(':');
+        // Remove port (everything after last colon)
+        // This preserves consecutive colons (e.g., ::ffff:127.0.0.1:8080 -> ::ffff:127.0.0.1)
+        return str.substring(0, lastColonIdx);
       }
     }
   }
