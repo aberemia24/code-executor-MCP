@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import * as fs from 'fs/promises';
 import { spawn } from 'child_process';
-import { MCP_CONFIG_PATH } from './constants.js';
+import { getMCPConfigPath } from './config.js';
 import { extractServerName, isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo } from './types.js';
 
@@ -26,14 +26,17 @@ export class MCPClientPool {
   /**
    * Initialize client pool by reading config and connecting to servers
    */
-  async initialize(configPath: string = MCP_CONFIG_PATH): Promise<void> {
+  async initialize(configPath?: string): Promise<void> {
     if (this.initialized) {
       return;
     }
 
     try {
+      // Resolve config path if not provided
+      const resolvedPath = configPath ?? await getMCPConfigPath();
+
       // Read MCP configuration
-      const configContent = await fs.readFile(configPath, 'utf-8');
+      const configContent = await fs.readFile(resolvedPath, 'utf-8');
       const config: MCPConfig = JSON.parse(configContent);
 
       // Filter out code-executor to prevent circular dependency

@@ -3,7 +3,7 @@
  */
 
 import * as fs from 'fs/promises';
-import { ENABLE_AUDIT_LOG, AUDIT_LOG_PATH, ALLOWED_PROJECTS } from './constants.js';
+import { isAuditLogEnabled, getAuditLogPath, getAllowedReadPaths } from './config.js';
 import { isValidMCPToolName, isAllowedPath, hashCode } from './utils.js';
 import type { AuditLogEntry, CodeValidationResult, SandboxPermissions } from './types.js';
 
@@ -50,13 +50,15 @@ export class SecurityValidator {
    * Validate sandbox permissions
    */
   validatePermissions(permissions: SandboxPermissions): void {
+    const allowedProjects = getAllowedReadPaths();
+
     // Validate read paths
     if (permissions.read) {
       for (const path of permissions.read) {
-        if (!isAllowedPath(path, ALLOWED_PROJECTS)) {
+        if (!isAllowedPath(path, allowedProjects)) {
           throw new Error(
             `Read path not allowed: ${path}. ` +
-            `Must be within: ${ALLOWED_PROJECTS.join(', ')}`
+            `Must be within: ${allowedProjects.join(', ')}`
           );
         }
       }
@@ -66,7 +68,7 @@ export class SecurityValidator {
     if (permissions.write) {
       for (const path of permissions.write) {
         // Write paths are more restricted - only /tmp by default
-        const allowedWritePaths = ['/tmp', ...ALLOWED_PROJECTS];
+        const allowedWritePaths = ['/tmp', ...allowedProjects];
         if (!isAllowedPath(path, allowedWritePaths)) {
           throw new Error(
             `Write path not allowed: ${path}. ` +
@@ -125,7 +127,7 @@ export class SecurityValidator {
    * Create audit log entry
    */
   async auditLog(entry: Omit<AuditLogEntry, 'timestamp' | 'codeHash'>, code: string): Promise<void> {
-    if (!ENABLE_AUDIT_LOG) {
+    if (!isAuditLogEnabled()) {
       return;
     }
 
@@ -137,7 +139,7 @@ export class SecurityValidator {
 
     try {
       const logLine = JSON.stringify(fullEntry) + '\n';
-      await fs.appendFile(AUDIT_LOG_PATH, logLine, 'utf-8');
+      await fs.appendFile(getAuditLogPath(), logLine, 'utf-8');
     } catch (error) {
       // Don't fail execution if audit logging fails
       console.error('Failed to write audit log:', error);
@@ -148,6 +150,6 @@ export class SecurityValidator {
    * Check if audit logging is enabled
    */
   isAuditLogEnabled(): boolean {
-    return ENABLE_AUDIT_LOG;
+    return isAuditLogEnabled();
   }
 }

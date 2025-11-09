@@ -2,8 +2,9 @@
  * Unit tests for SecurityValidator
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, beforeAll } from 'vitest';
 import { SecurityValidator } from '../src/security.js';
+import { initConfig } from '../src/config.js';
 import * as fs from 'fs/promises';
 
 // Mock fs for audit logging tests
@@ -13,6 +14,13 @@ vi.mock('fs/promises', () => ({
 
 describe('SecurityValidator', () => {
   let validator: SecurityValidator;
+
+  beforeAll(async () => {
+    // Initialize config once for all tests
+    // Set minimal env vars for testing
+    process.env.ALLOWED_PROJECTS = process.cwd();
+    await initConfig();
+  });
 
   beforeEach(() => {
     validator = new SecurityValidator();

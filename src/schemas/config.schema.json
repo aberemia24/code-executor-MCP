@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-executor-mcp.dev/schema/v1.json",
+  "title": "Code Executor MCP Configuration",
+  "description": "Configuration schema for code-executor-mcp server",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "description": "Configuration schema version",
+      "const": 1
+    },
+    "security": {
+      "type": "object",
+      "description": "Security and execution settings",
+      "properties": {
+        "defaultTimeoutMs": {
+          "type": "number",
+          "description": "Default execution timeout in milliseconds",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 30000
+        },
+        "maxTimeoutMs": {
+          "type": "number",
+          "description": "Maximum allowed execution timeout in milliseconds",
+          "minimum": 1000,
+          "maximum": 600000,
+          "default": 300000
+        },
+        "maxCodeSize": {
+          "type": "number",
+          "description": "Maximum code size in bytes",
+          "minimum": 1000,
+          "maximum": 1000000,
+          "default": 100000
+        },
+        "allowRead": {
+          "type": "array",
+          "description": "Allowed paths for reading files",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "allowWrite": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "Enable/disable all write operations"
+            },
+            {
+              "type": "array",
+              "description": "Allowed paths for writing files",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "default": false
+        },
+        "allowNetwork": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "Enable/disable all network access"
+            },
+            {
+              "type": "array",
+              "description": "Allowed network hosts",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "default": ["localhost", "127.0.0.1"]
+        },
+        "enableAuditLog": {
+          "type": "boolean",
+          "description": "Enable audit logging",
+          "default": false
+        },
+        "auditLogPath": {
+          "type": "string",
+          "description": "Path to audit log file",
+          "default": "./audit.log"
+        },
+        "rateLimit": {
+          "type": "object",
+          "description": "Rate limiting configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable rate limiting",
+              "default": false
+            },
+            "windowMs": {
+              "type": "number",
+              "description": "Rate limit window in milliseconds",
+              "minimum": 1000,
+              "default": 60000
+            },
+            "maxRequests": {
+              "type": "number",
+              "description": "Maximum requests per window",
+              "minimum": 1,
+              "default": 30
+            }
+          }
+        }
+      }
+    },
+    "executors": {
+      "type": "object",
+      "description": "Language executor configurations",
+      "properties": {
+        "typescript": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "denoPath": {
+              "type": "string",
+              "description": "Path to Deno executable",
+              "default": "deno"
+            }
+          }
+        },
+        "python": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "pythonPath": {
+              "type": "string",
+              "description": "Path to Python executable",
+              "default": "python3"
+            },
+            "version": {
+              "type": "string",
+              "description": "Python version requirement",
+              "pattern": "^3\\.(9|10|11|12)$"
+            }
+          }
+        }
+      }
+    },
+    "mcpConfigPath": {
+      "type": "string",
+      "description": "Path to MCP configuration file (.mcp.json)",
+      "default": "./.mcp.json"
+    }
+  },
+  "additionalProperties": false
+}

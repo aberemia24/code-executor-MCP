@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from './constants.js';
+import { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from './config.js';
 
 /**
  * Sandbox permissions schema

@@ -10,7 +10,7 @@ import * as http from 'http';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { DENO_PATH } from './constants.js';
+import { getDenoPath } from './config.js';
 import { sanitizeOutput, truncateOutput, formatDuration, normalizeError } from './utils.js';
 import { AllowlistValidator, ToolCallTracker } from './proxy-helpers.js';
 import { StreamingProxy } from './streaming-proxy.js';
@@ -253,7 +253,7 @@ await import('file://${userCodeFile}');
     denoArgs.push('-');
 
     // Spawn Deno process
-    const denoProcess = spawn(DENO_PATH, denoArgs, {
+    const denoProcess = spawn(getDenoPath(), denoArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

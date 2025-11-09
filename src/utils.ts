@@ -3,7 +3,7 @@
  */
 
 import * as crypto from 'crypto';
-import { CHARACTER_LIMIT } from './constants.js';
+import { CHARACTER_LIMIT } from './config.js';
 import type { ErrorResponse, ErrorType } from './types.js';
 
 /**

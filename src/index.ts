@@ -12,6 +12,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { initConfig } from './config.js';
 import { ExecuteTypescriptInputSchema } from './schemas.js';
 import { MCPClientPool } from './mcp-client-pool.js';
 import { SecurityValidator } from './security.js';
@@ -263,6 +264,10 @@ Returns:
    */
   async start(): Promise<void> {
     try {
+      // Initialize configuration
+      console.error('Loading configuration...');
+      await initConfig();
+
       // Initialize MCP client pool
       console.error('Initializing MCP client pool...');
       await this.mcpClientPool.initialize();
