@@ -67,19 +67,114 @@ console.log(result);
 
 ## 📦 Installation
 
+### Option 1: Docker (Recommended for Production)
+
+**Production-grade containerized deployment with security hardening.**
+
+```bash
+# 1. Build the image locally
+cd code-executor-mcp
+npm run build  # Build TypeScript first
+docker build -t code-executor-mcp:1.3.0 .
+
+# 2. Run with docker-compose (recommended)
+docker-compose up -d
+
+# 3. Or run manually with security options
+docker run -d \
+  --name code-executor \
+  --read-only \
+  -v /tmp/code-executor \
+  -m 512m \
+  --cpus="0.5" \
+  --pids-limit=100 \
+  --security-opt=no-new-privileges \
+  --cap-drop=ALL \
+  code-executor-mcp:1.3.0
+```
+
+**Docker Security Features:**
+- ✅ Non-root user (UID 1001)
+- ✅ Read-only root filesystem
+- ✅ Resource limits (memory, CPU, PIDs)
+- ✅ Network isolation (no external access by default)
+- ✅ All capabilities dropped
+- ✅ Custom seccomp profile (syscall filtering)
+- ✅ Tini init system (zombie process reaping)
+
+**Testing Docker Security:**
+```bash
+# Run comprehensive security test suite
+./test-docker-security.sh
+```
+
+See [DOCKER_TESTING.md](DOCKER_TESTING.md) for detailed testing procedures.
+
+### Option 2: NPM (Development/Local)
+
 ```bash
 npm install -g code-executor-mcp
 ```
 
 ### Prerequisites
 
+**For NPM installation:**
 - **Node.js** 22.x or higher
 - **Deno** (for TypeScript execution) - Install from [deno.land](https://deno.land/)
 - **Python** 3.9+ (optional, for Python execution)
 
+**For Docker installation:**
+- **Docker** 20.10+ and **Docker Compose** 2.0+
+- All dependencies (Node.js, Deno, Python) are included in the image
+
 ## 🔧 Configuration
 
-### Quick Start
+### Docker Configuration
+
+When running in Docker, configure via `docker-compose.yml`:
+
+```yaml
+services:
+  code-executor:
+    image: code-executor-mcp:1.3.0
+    environment:
+      # Security
+      ALLOWED_PROJECTS: "/app/projects"
+      ENABLE_AUDIT_LOG: "true"
+      AUDIT_LOG_PATH: "/app/audit.log"
+
+      # Executors
+      DENO_PATH: "/usr/bin/deno"
+      PYTHON_PATH: "/usr/bin/python3"
+
+      # MCP Configuration (optional)
+      MCP_CONFIG_PATH: "/app/.mcp.json"
+
+    volumes:
+      # Mount your project (read-only)
+      - ./my-project:/app/projects:ro
+
+      # Mount MCP config if using other servers
+      - ./.mcp.json:/app/.mcp.json:ro
+
+      # Writable temp directory
+      - /tmp/code-executor
+
+    # Security constraints
+    read_only: true
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 100
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+      - seccomp=./seccomp-profile.json
+```
+
+**Note:** The Docker image includes a default `.mcp.json` with zero servers (standalone mode). Mount your own `.mcp.json` to enable MCP tool access.
+
+### Local Configuration
 
 Create `.code-executor.json` in your project root:
 
@@ -404,6 +499,37 @@ const result = await zenThinkDeep('question');
 
 ## 🔒 Security Model
 
+### Multi-Layer Defense Strategy
+
+**Code-executor implements defense-in-depth with multiple security layers:**
+
+1. **Path Traversal Protection (CWE-22)**
+   - Symlink resolution with `fs.realpath()`
+   - Canonical path validation before access
+   - Prevents directory escape attacks
+
+2. **SSRF Protection (CWE-918)**
+   - Comprehensive IP blocklist (localhost, RFC 1918 private networks)
+   - Cloud metadata endpoint filtering (AWS, GCP, Azure)
+   - Hostname and resolved IP validation
+
+3. **HTTP Proxy Authentication (CWE-306)**
+   - Cryptographically secure bearer tokens (32 bytes)
+   - All sandbox-to-MCP communication authenticated
+   - Prevents unauthorized tool access
+
+4. **Temp File Integrity (CWE-345)**
+   - SHA-256 hash verification after write
+   - Detects tampering before execution
+   - Race condition prevention
+
+5. **Container Isolation (Docker)**
+   - Non-root user execution (UID 1001)
+   - Read-only root filesystem
+   - Network isolation (no external access)
+   - Resource limits (memory, CPU, PIDs)
+   - Syscall filtering (seccomp profile)
+
 ### Principle of Least Privilege
 
 1. **Default: Deny All** - No file system or network access by default
@@ -529,6 +655,101 @@ Features:
 └──────────────┘    └─────────────┘  └────────┘ └────┘
 ```
 
+## 🚀 Production Deployment
+
+### Docker Deployment (Recommended)
+
+**1. Build Production Image**
+```bash
+# Install dependencies and build
+npm ci
+npm run build
+
+# Build Docker image
+docker build -t code-executor-mcp:1.3.0 .
+
+# Tag for registry (optional)
+docker tag code-executor-mcp:1.3.0 your-registry/code-executor-mcp:1.3.0
+```
+
+**2. Deploy with Docker Compose**
+```bash
+# Start service
+docker-compose up -d
+
+# View logs
+docker-compose logs -f code-executor
+
+# Stop service
+docker-compose down
+```
+
+**3. Security Checklist**
+- ✅ Run as non-root (UID 1001)
+- ✅ Enable read-only filesystem
+- ✅ Set resource limits (512MB RAM, 0.5 CPU)
+- ✅ Drop all capabilities
+- ✅ Use seccomp profile
+- ✅ Network isolation (default)
+- ✅ Mount projects read-only
+- ✅ Enable audit logging
+
+**4. Health Monitoring**
+```bash
+# Health check via Docker
+docker exec code-executor node -e "console.log('healthy')"
+
+# Check container status
+docker ps --filter name=code-executor
+
+# View resource usage
+docker stats code-executor
+```
+
+### Production Configuration
+
+```yaml
+# docker-compose.yml for production
+services:
+  code-executor:
+    image: code-executor-mcp:1.3.0
+    restart: unless-stopped
+    read_only: true
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 100
+
+    environment:
+      NODE_ENV: production
+      ENABLE_AUDIT_LOG: "true"
+      AUDIT_LOG_PATH: "/app/audit.log"
+
+    volumes:
+      # Projects (read-only)
+      - /var/projects:/app/projects:ro
+
+      # Audit logs (persistent)
+      - ./logs:/app/logs
+
+      # Temp directory
+      - /tmp/code-executor
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges
+      - seccomp=./seccomp-profile.json
+
+    networks:
+      - isolated
+
+networks:
+  isolated:
+    driver: bridge
+    internal: true  # No external network access
+```
+
 ## 🧪 Development
 
 ### Setup
@@ -546,6 +767,10 @@ npm run build       # Build TypeScript
 npm test            # Run tests (105 passing)
 npm run typecheck   # Type check only
 npm run dev         # Watch mode
+
+# Docker development
+npm run docker:build    # Build Docker image
+npm run docker:test     # Run security tests
 ```
 
 ### Testing
@@ -620,9 +845,32 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## 🔐 Security
 
-Found a security vulnerability? See [SECURITY.md](SECURITY.md) for responsible disclosure.
+**Current Security Status:**
+- ✅ Path traversal protection (symlink resolution)
+- ✅ SSRF mitigation (IP blocklist)
+- ✅ HTTP proxy authentication (bearer tokens)
+- ✅ Temp file integrity (SHA-256 verification)
+- ✅ Docker containerization (multi-layer isolation)
+- ✅ Comprehensive audit logging
+
+Found a security vulnerability? See [SECURITY.md](SECURITY.md) for:
+- Documented vulnerabilities and mitigations
+- Responsible disclosure process
+- Security audit history
 
 **Please do not open public issues for security vulnerabilities.**
+
+**Testing Security:**
+```bash
+# Run comprehensive Docker security tests
+./test-docker-security.sh
+
+# View audit logs
+tail -f audit.log
+
+# Check security configuration
+docker inspect code-executor | jq '.[0].HostConfig.SecurityOpt'
+```
 
 ## 🙏 Acknowledgments
 
@@ -632,10 +880,27 @@ Found a security vulnerability? See [SECURITY.md](SECURITY.md) for responsible d
 
 ## 📚 Related
 
+**MCP & Code Execution:**
 - [MCP Specification](https://spec.modelcontextprotocol.io/)
 - [Claude Code Documentation](https://docs.claude.com/claude-code)
+- [Anthropic's Code Execution Guide](https://www.anthropic.com/engineering/code-execution-with-mcp)
 - [Deno Documentation](https://docs.deno.com/)
+
+**Security:**
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [CWE-22: Path Traversal](https://cwe.mitre.org/data/definitions/22.html)
+- [CWE-918: SSRF](https://cwe.mitre.org/data/definitions/918.html)
+- [Docker Security Best Practices](https://docs.docker.com/engine/security/)
+- [Seccomp Security Profiles](https://docs.docker.com/engine/security/seccomp/)
+
+**Algorithms & Patterns:**
 - [Token Bucket Algorithm](https://en.wikipedia.org/wiki/Token_bucket)
+- [Progressive Disclosure (UX)](https://www.nngroup.com/articles/progressive-disclosure/)
+
+**Project Documentation:**
+- [SECURITY.md](SECURITY.md) - Vulnerability documentation and mitigations
+- [DOCKER_TESTING.md](DOCKER_TESTING.md) - Docker security testing procedures
+- [CLAUDE.md](CLAUDE.md) - AI assistant context and standards
 
 ---
 
