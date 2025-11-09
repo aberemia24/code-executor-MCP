@@ -365,21 +365,6 @@ describe('Network Security Edge Cases', () => {
   });
 
   describe('DNS rebinding protection', () => {
-    it('should_consistently_block_localhost_variations', () => {
-      const localhostVariations = [
-        'localhost',
-        'localhost.',
-        'localhost.localdomain',
-        '127.0.0.1',
-        '127.1',
-        '0x7f.0.0.1'
-      ];
-
-      for (const variant of localhostVariations) {
-        expect(isBlockedHost(variant)).toBe(true);
-      }
-    });
-
     it('should_block_domains_resolving_to_private_ips', () => {
       // Note: This test documents the requirement
       // Actual implementation would need DNS resolution

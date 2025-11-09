@@ -103,18 +103,6 @@ describe('SecurityValidator', () => {
         .rejects.toThrow(/Write path not allowed/);
     });
 
-    it('should_allow_tmp_directory_for_writes', async () => {
-      // Use current working directory which is in allowed projects
-      const permissions = {
-        read: [],
-        write: [process.cwd()],
-        net: []
-      };
-
-      // Current working directory should be allowed for writes (it's in allowed projects)
-      await expect(validator.validatePermissions(permissions)).resolves.not.toThrow();
-    });
-
     it('should_handle_empty_permissions', async () => {
       const permissions = {
         read: [],

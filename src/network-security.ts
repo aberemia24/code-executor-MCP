@@ -65,18 +65,19 @@ const BLOCKED_IP_PATTERNS = {
  * isBlockedHost('api.github.com') // false - allowed
  */
 export function isBlockedHost(host: string): boolean {
-  // Remove port and brackets if present (for IPv6)
-  let hostname = host.split(':')[0] ?? host;
+  let hostname = host;
 
-  // Handle IPv6 with brackets [::1]:port
-  if (hostname.includes('[')) {
-    hostname = hostname.replace(/[\[\]]/g, '');
-  }
-
-  // Special handling for full IPv6 addresses with ports
-  // e.g., "fe80::1:8080" should extract "fe80::1"
-  if (isIPv6Format(host)) {
+  // Handle IPv6 with brackets [::1] or [::1]:port
+  if (host.includes('[')) {
+    // Extract content between brackets
+    const match = host.match(/\[([^\]]+)\]/);
+    hostname = match ? match[1]! : host.replace(/[\[\]]/g, '');
+  } else if (isIPv6Format(host)) {
+    // IPv6 without brackets - extract address (handle ports)
     hostname = extractIPv6(host);
+  } else {
+    // IPv4 or hostname - remove port if present
+    hostname = host.split(':')[0] ?? host;
   }
 
   // Check all blocked patterns
@@ -106,21 +107,28 @@ function isIPv6Format(str: string): boolean {
 /**
  * Extract IPv6 address from string with optional port
  * e.g., "fe80::1:8080" -> "fe80::1"
+ *
+ * Note: Only attempts to strip ports for clearly formatted cases.
+ * For ambiguous cases (like ::1 where 1 could be part of address),
+ * returns the original string.
  */
 function extractIPv6(str: string): string {
   // Remove brackets
   str = str.replace(/[\[\]]/g, '');
 
-  // If it has a port at the end, remove it
-  // IPv6 addresses have at least 2 colons, ports have 1
+  // Only try to extract port if it's clearly a port (> 1000 typically)
+  // This avoids mistaking parts of IPv6 addresses as ports
   const parts = str.split(':');
   if (parts.length > 2) {
     // Could be IPv6 with or without port
-    // Check if last part is a number (port)
+    // Check if last part is a large number (likely a port >= 1000)
     const lastPart = parts[parts.length - 1];
-    if (lastPart && /^\d+$/.test(lastPart)) {
-      // Likely a port, remove it
-      return parts.slice(0, -1).join(':');
+    if (lastPart && /^\d{4,5}$/.test(lastPart)) {
+      const portNum = parseInt(lastPart, 10);
+      // Port range 1000-65535
+      if (portNum >= 1000 && portNum <= 65535) {
+        return parts.slice(0, -1).join(':');
+      }
     }
   }
 

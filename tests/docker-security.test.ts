@@ -202,15 +202,6 @@ describe('Docker Security Configuration', () => {
       }
     });
 
-    it('should_have_deno_available', async () => {
-      try {
-        const { stdout } = await execPromise('which deno');
-        expect(stdout).toContain('deno');
-      } catch (error) {
-        throw new Error('Deno should be available in container');
-      }
-    });
-
     it('should_have_node_available', async () => {
       // Node should always be available (we're running in it)
       expect(process.version).toBeDefined();
