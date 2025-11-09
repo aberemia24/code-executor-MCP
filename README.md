@@ -45,6 +45,63 @@ console.log(result);
 
 **Token savings**: 47 tools @ ~3,000 tokens each = 141,000 tokens saved!
 
+## 🤔 When to Use This (and When NOT to)
+
+### ✅ Use code-executor when you have:
+
+- **Multiple MCPs (5+)** causing token bloat and context exhaustion
+- **Mix of local + remote tools** - filesystem + Linear API + code review services
+- **Complex orchestration** - multi-step workflows with state management
+- **Security requirements** - need allowlisting, audit logs, rate limiting
+- **Existing MCP servers** you want to orchestrate without rebuilding
+
+### ❌ Don't use this if you only need:
+
+- **Simple filesystem operations** → Use Node.js `fs` module or shell commands directly
+- **Basic git commands** → Use `child_process.exec('git ...')`
+- **Single database queries** → Use `psql`, `mysql` CLI directly
+- **One or two MCPs** → Just enable them directly, no need for orchestration
+
+**Philosophy:** Use the simplest tool that works. code-executor solves a specific problem: **orchestrating many MCPs without context bloat**. If you don't have that problem, you probably don't need this tool.
+
+### 💡 Real-World Example (The Sweet Spot)
+
+```typescript
+// Heterogeneous orchestration - local + remote + governance:
+
+// 1. Read local file
+const code = await callMCPTool('mcp__filesystem__read_file', {
+  path: '/app/src/api/users.ts'
+});
+
+// 2. Call remote AI code review service
+const review = await callMCPTool('mcp__zen__codereview', {
+  code,
+  language: 'typescript',
+  styleGuide: 'airbnb'
+});
+
+// 3. Create Linear issue via API (OAuth handled by MCP)
+if (review.issues.length > 0) {
+  await callMCPTool('mcp__linear__create_issue', {
+    title: `Code review: ${review.issues[0].title}`,
+    description: review.issues[0].details,
+    teamId: 'ENG',
+    priority: 2
+  });
+}
+
+// 4. Post to Slack
+await callMCPTool('mcp__slack__post_message', {
+  channel: '#code-reviews',
+  text: `Review complete: ${review.summary}`
+});
+
+console.log('Orchestrated 4 different services with unified interface!');
+```
+
+This workflow mixes local filesystem, remote AI service, Linear API (with OAuth), and Slack - all with one interface, centralized auth, and audit logging.
+
 ## 🚀 Features
 
 ### ✅ Executors
