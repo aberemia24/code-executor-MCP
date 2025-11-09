@@ -330,7 +330,7 @@ print(json.dumps(result, indent=2))
 
 **MCP servers update independently.** Their APIs can change at any time without warning.
 
-**Real example from January 2025:**
+**Real example:**
 - Zen MCP changed parameter names: `cli_name` → `model`, `query` → `step`
 - Changed data types: `findings: []` → `findings: ''`
 - **If we shipped wrappers, they'd be broken** ❌
