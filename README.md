@@ -9,6 +9,8 @@
 
 > **Based on** [Anthropic's official guide to Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp)
 
+> **⚠️ Built for Claude Code:** This MCP server was developed and tested **exclusively with Claude Code**. While it follows MCP standards, **no testing has been performed** on other MCP clients (Claude Desktop, Cline, Roo, etc.). Use with other clients at your own risk.
+
 ## 🎯 The Problem
 
 MCP servers with many tools consume excessive context window tokens. For example, a configuration with 47 MCP tools uses ~150,000 tokens just to expose the tool definitions - leaving little room for actual work.
@@ -157,9 +159,9 @@ Use `env:VAR_NAME` pattern in configuration files to reference environment varia
 
 ## 📖 Usage
 
-### Add to MCP Configuration
+### Add to MCP Configuration (Claude Code)
 
-Add to your `.mcp.json` (Claude Code, Cline, etc.):
+Add to your `.mcp.json` (tested with Claude Code only):
 
 ```json
 {
@@ -250,7 +252,7 @@ For SSE MCPs that require OAuth (Linear, GitHub, etc.):
 
 > **⚠️ Critical:** Do **NOT** delete the MCP from `.mcp.json` - just disable it via `/mcp`. If you delete it, code-executor won't have access anymore. The MCP must remain in the config file (disabled state).
 
-> **📝 Note:** This has been tested with **Claude Code only**. Other MCP clients (Claude Desktop, Cline, etc.) may have different authentication flows.
+> **📝 Note:** This authentication flow is for **Claude Code only**. The entire code-executor MCP server has been developed and tested **exclusively with Claude Code**. Other MCP clients have not been tested and may not work correctly.
 
 ### Execute TypeScript
 
