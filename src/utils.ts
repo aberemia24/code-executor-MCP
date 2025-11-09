@@ -59,10 +59,10 @@ export function isValidMCPToolName(toolName: string): boolean {
 export function extractServerName(toolName: string): string {
   // mcp__zen__codereview -> zen
   const parts = toolName.split('__');
-  if (parts.length !== 3) {
+  if (parts.length !== 3 || !parts[1]) {
     throw new Error(`Invalid MCP tool name format: ${toolName}`);
   }
-  return parts[1]!;
+  return parts[1];
 }
 
 /**

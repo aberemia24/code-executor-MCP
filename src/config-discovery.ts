@@ -120,7 +120,7 @@ export class ConfigDiscoveryService {
       const json = JSON.parse(content);
 
       // Resolve env:VAR_NAME references
-      return this.resolveEnvReferences(json);
+      return this.resolveEnvReferences(json) as PartialConfig;
     } catch (error) {
       // File doesn't exist or is invalid - not an error, just skip
       return null;
@@ -130,7 +130,7 @@ export class ConfigDiscoveryService {
   /**
    * Resolve env:VAR_NAME references in configuration
    */
-  private resolveEnvReferences(obj: any): any {
+  private resolveEnvReferences(obj: unknown): unknown {
     if (typeof obj === 'string') {
       // Check for env:VAR_NAME pattern
       const match = obj.match(/^env:([A-Z_][A-Z0-9_]*)$/);
@@ -150,7 +150,7 @@ export class ConfigDiscoveryService {
     }
 
     if (obj && typeof obj === 'object') {
-      const resolved: any = {};
+      const resolved: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(obj)) {
         resolved[key] = this.resolveEnvReferences(value);
       }
@@ -173,7 +173,7 @@ export class ConfigDiscoveryService {
 
     // Merge in reverse order (higher priority configs override)
     for (let i = configs.length - 2; i >= 0; i--) {
-      merged = this.deepMerge(merged, configs[i]);
+      merged = this.deepMerge(merged, configs[i]) as PartialConfig;
     }
 
     return merged;
@@ -182,11 +182,20 @@ export class ConfigDiscoveryService {
   /**
    * Deep merge two objects (source overrides target)
    */
-  private deepMerge(target: any, source: any): any {
+  private deepMerge(target: unknown, source: unknown): unknown {
     if (!source) return target;
     if (!target) return source;
 
-    const result = { ...target };
+    // Type guard: both must be objects for merging
+    if (typeof target !== 'object' || typeof source !== 'object') {
+      return source; // Source overrides
+    }
+
+    if (Array.isArray(target) || Array.isArray(source)) {
+      return source; // Arrays are replaced, not merged
+    }
+
+    const result = { ...target } as Record<string, unknown>;
 
     for (const [key, value] of Object.entries(source)) {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
