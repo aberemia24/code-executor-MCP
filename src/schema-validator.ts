@@ -154,13 +154,18 @@ export class SchemaValidator {
   /**
    * Check if types match (handles JSON Schema types)
    */
-  private typesMatch(actualType: string, expectedType: string | string[], value: any): boolean {
+  private typesMatch(actualType: string, expectedType: string | string[] | undefined, value: any): boolean {
+    // If no expected type specified, accept any type (permissive)
+    if (expectedType === undefined || expectedType === null) {
+      return true;
+    }
+
     // Handle array of types
     if (Array.isArray(expectedType)) {
       return expectedType.some(t => this.typesMatch(actualType, t, value));
     }
 
-    // Type aliases
+    // Type aliases: JSON Schema "integer" maps to JS number that's an integer
     if (expectedType === 'integer' && actualType === 'number') {
       return Number.isInteger(value);
     }
