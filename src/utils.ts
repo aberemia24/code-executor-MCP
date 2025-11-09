@@ -83,23 +83,48 @@ export function formatDuration(ms: number): string {
 /**
  * Check if path is within allowed project roots
  *
- * SECURITY: Ensures exact directory match or proper subdirectory match
- * to prevent partial name matches (e.g., /home/user shouldn't match /home/username)
+ * SECURITY: Uses fs.realpath() to resolve symlinks and canonicalize paths
+ * to prevent symlink escapes and path traversal attacks.
+ *
+ * Changes in this version:
+ * - Now async (returns Promise<boolean>)
+ * - Resolves symlinks via fs.realpath()
+ * - Canonicalizes paths to prevent ../../../ attacks
+ * - Handles non-existent paths gracefully (returns false)
  */
-export function isAllowedPath(path: string, allowedRoots: string[]): boolean {
+export async function isAllowedPath(path: string, allowedRoots: string[]): Promise<boolean> {
   if (allowedRoots.length === 0) {
     return false; // No paths allowed if no roots specified
   }
 
-  const normalizedPath = path.replace(/\\/g, '/');
+  try {
+    // Resolve symlinks and canonicalize path
+    const { realpath } = await import('fs/promises');
+    const resolvedPath = await realpath(path);
 
-  return allowedRoots.some(root => {
-    const normalizedRoot = root.replace(/\\/g, '/').replace(/\/$/, ''); // Remove trailing slash
+    for (const root of allowedRoots) {
+      try {
+        const resolvedRoot = await realpath(root);
 
-    // Exact match or starts with root + path separator
-    return normalizedPath === normalizedRoot ||
-           normalizedPath.startsWith(normalizedRoot + '/');
-  });
+        // Use path.sep for OS-agnostic separator
+        const { sep } = await import('path');
+
+        // Exact match or proper subdirectory
+        if (resolvedPath === resolvedRoot ||
+            resolvedPath.startsWith(resolvedRoot + sep)) {
+          return true;
+        }
+      } catch (error) {
+        // Root doesn't exist or not accessible - skip this root
+        continue;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    // Path doesn't exist or access denied
+    return false;
+  }
 }
 
 /**

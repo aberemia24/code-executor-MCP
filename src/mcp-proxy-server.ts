@@ -6,6 +6,7 @@
  */
 
 import * as http from 'http';
+import * as crypto from 'crypto';
 import { normalizeError } from './utils.js';
 import { AllowlistValidator, ToolCallTracker } from './proxy-helpers.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
@@ -33,6 +34,7 @@ import type { MCPClientPool } from './mcp-client-pool.js';
 export class MCPProxyServer {
   private server: http.Server | null = null;
   private port = 0;
+  private authToken: string;
   private validator: AllowlistValidator;
   private tracker: ToolCallTracker;
 
@@ -41,6 +43,8 @@ export class MCPProxyServer {
    *
    * @param mcpClientPool - Pool of MCP clients to proxy requests to
    * @param allowedTools - Whitelist of allowed MCP tool names
+   *
+   * SECURITY: Generates random bearer token for authentication
    */
   constructor(
     private mcpClientPool: MCPClientPool,
@@ -48,21 +52,35 @@ export class MCPProxyServer {
   ) {
     this.validator = new AllowlistValidator(allowedTools);
     this.tracker = new ToolCallTracker();
+    // Generate cryptographically secure random token (32 bytes = 64 hex chars)
+    this.authToken = crypto.randomBytes(32).toString('hex');
   }
 
   /**
    * Start proxy server on random port
    *
-   * Returns the port number that the server is listening on.
-   * The sandbox code will connect to localhost:<port> to call MCP tools.
+   * SECURITY: Returns both port and authentication token.
+   * The sandbox code will connect to localhost:<port> with Bearer token.
+   *
+   * @returns Object with port number and auth token
    */
-  async start(): Promise<number> {
+  async start(): Promise<{ port: number; authToken: string }> {
     return new Promise((resolve, reject) => {
       this.server = http.createServer(async (req, res) => {
         // Only accept POST requests
         if (req.method !== 'POST') {
           res.writeHead(405);
           res.end();
+          return;
+        }
+
+        // SECURITY: Validate bearer token authentication
+        const authHeader = req.headers['authorization'];
+        if (authHeader !== `Bearer ${this.authToken}`) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Unauthorized - invalid or missing authentication token'
+          }));
           return;
         }
 
@@ -107,11 +125,12 @@ export class MCPProxyServer {
         }
       });
 
-      this.server.listen(0, 'localhost', () => {
+      // SECURITY: Bind explicitly to 127.0.0.1 (not just 'localhost')
+      this.server.listen(0, '127.0.0.1', () => {
         const address = this.server!.address();
         if (address && typeof address !== 'string') {
           this.port = address.port;
-          resolve(this.port);
+          resolve({ port: this.port, authToken: this.authToken });
         } else {
           reject(new Error('Failed to get server port'));
         }
@@ -139,6 +158,15 @@ export class MCPProxyServer {
    */
   getPort(): number {
     return this.port;
+  }
+
+  /**
+   * Get the authentication token
+   *
+   * SECURITY: Used to inject token into sandbox environment
+   */
+  getAuthToken(): string {
+    return this.authToken;
   }
 
   /**
