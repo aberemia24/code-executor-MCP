@@ -7,11 +7,14 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import * as fs from 'fs/promises';
 import { spawn } from 'child_process';
 import { getMCPConfigPath } from './config.js';
 import { extractServerName, isValidMCPToolName, normalizeError } from './utils.js';
-import type { MCPConfig, MCPServerConfig, ToolInfo } from './types.js';
+import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
+import { isStdioConfig, isHttpConfig } from './types.js';
 
 /**
  * MCP Client Pool
@@ -21,6 +24,7 @@ import type { MCPConfig, MCPServerConfig, ToolInfo } from './types.js';
 export class MCPClientPool {
   private clients: Map<string, Client> = new Map();
   private toolCache: Map<string, ToolInfo> = new Map();
+  private processes: Map<string, ProcessInfo> = new Map();
   private initialized = false;
 
   /**
@@ -100,9 +104,22 @@ export class MCPClientPool {
   }
 
   /**
-   * Connect to a single MCP server
+   * Connect to a single MCP server (dispatcher)
    */
   private async connectToServer(serverName: string, config: MCPServerConfig): Promise<void> {
+    if (isStdioConfig(config)) {
+      await this.connectStdio(serverName, config);
+    } else if (isHttpConfig(config)) {
+      await this.connectHttp(serverName, config);
+    } else {
+      throw new Error(`Unknown transport type for server: ${serverName}`);
+    }
+  }
+
+  /**
+   * Connect to STDIO-based MCP server
+   */
+  private async connectStdio(serverName: string, config: StdioServerConfig): Promise<void> {
     // Create client
     const client = new Client(
       {
@@ -127,7 +144,69 @@ export class MCPClientPool {
     // Connect to server
     await client.connect(transport);
 
+    // Track process for cleanup
+    if (transport.pid) {
+      this.processes.set(serverName, {
+        pid: transport.pid,
+        serverName,
+      });
+    }
+
     // Store client
+    this.clients.set(serverName, client);
+  }
+
+  /**
+   * Connect to HTTP/SSE-based MCP server
+   *
+   * Tries StreamableHTTP first (modern), falls back to SSE (legacy)
+   */
+  private async connectHttp(serverName: string, config: HttpServerConfig): Promise<void> {
+    // Create client
+    const client = new Client(
+      {
+        name: 'code-executor-client',
+        version: '1.0.0',
+      },
+      {
+        capabilities: {},
+      }
+    );
+
+    let connected = false;
+
+    // Try StreamableHTTP first (modern)
+    try {
+      const transport = new StreamableHTTPClientTransport(
+        new URL(config.url),
+        {
+          requestInit: {
+            headers: config.headers,
+          },
+        }
+      );
+      await client.connect(transport);
+      connected = true;
+      console.error(`✓ Connected to ${serverName} via StreamableHTTP`);
+    } catch (error) {
+      console.error(`⚠️  StreamableHTTP failed for ${serverName}, trying SSE...`);
+    }
+
+    // Fallback to SSE if StreamableHTTP failed
+    if (!connected) {
+      const transport = new SSEClientTransport(
+        new URL(config.url),
+        {
+          requestInit: {
+            headers: config.headers,
+          },
+        }
+      );
+      await client.connect(transport);
+      console.error(`✓ Connected to ${serverName} via SSE (fallback)`);
+    }
+
+    // Store client (no PID for HTTP servers)
     this.clients.set(serverName, client);
   }
 
@@ -223,9 +302,12 @@ export class MCPClientPool {
   }
 
   /**
-   * Disconnect all clients
+   * Disconnect all clients and kill child processes
+   *
+   * Graceful shutdown: SIGTERM → wait 2s → SIGKILL
    */
   async disconnect(): Promise<void> {
+    // Close MCP clients
     const disconnections = Array.from(this.clients.values()).map(
       async (client) => {
         try {
@@ -238,8 +320,48 @@ export class MCPClientPool {
 
     await Promise.all(disconnections);
 
+    // Kill child processes (STDIO servers only)
+    const processCleanup = Array.from(this.processes.values()).map(
+      async (processInfo) => {
+        try {
+          const { pid, serverName } = processInfo;
+
+          // Try graceful shutdown (SIGTERM)
+          try {
+            process.kill(pid, 'SIGTERM');
+            console.error(`✓ Sent SIGTERM to ${serverName} (PID ${pid})`);
+
+            // Wait 2 seconds for graceful shutdown
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            // Check if process still exists
+            try {
+              process.kill(pid, 0); // Signal 0 checks existence
+              // Process still alive, force kill
+              process.kill(pid, 'SIGKILL');
+              console.error(`⚠️  Force killed ${serverName} (PID ${pid}) with SIGKILL`);
+            } catch {
+              // Process already exited
+              console.error(`✓ ${serverName} (PID ${pid}) exited gracefully`);
+            }
+          } catch (error) {
+            // Process might already be dead, safe to ignore
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+              console.error(`Error killing ${serverName} (PID ${pid}):`, error);
+            }
+          }
+        } catch (error) {
+          console.error('Error during process cleanup:', error);
+        }
+      }
+    );
+
+    await Promise.all(processCleanup);
+
+    // Clear all state
     this.clients.clear();
     this.toolCache.clear();
+    this.processes.clear();
     this.initialized = false;
   }
 }

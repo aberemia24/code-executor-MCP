@@ -54,15 +54,62 @@ export interface SandboxOptions {
 }
 
 /**
- * MCP server configuration (from .mcp.json)
+ * STDIO transport configuration (default)
+ * For local MCP servers spawned as child processes
  */
-export interface MCPServerConfig {
+export interface StdioServerConfig {
   /** Command to run */
   command: string;
   /** Command arguments */
   args: string[];
   /** Environment variables */
   env?: Record<string, string>;
+}
+
+/**
+ * HTTP/SSE transport configuration
+ * For remote HTTP-based MCP servers
+ */
+export interface HttpServerConfig {
+  /** Transport type identifier */
+  type: 'http';
+  /** Server URL (e.g., https://mcp.linear.app/mcp) */
+  url: string;
+  /** HTTP headers (e.g., Authorization: Bearer <token>) */
+  headers?: Record<string, string>;
+}
+
+/**
+ * MCP server configuration (from .mcp.json)
+ *
+ * Supports two transport types:
+ * 1. STDIO: { command, args, env? }
+ * 2. HTTP/SSE: { type: "http", url, headers? }
+ */
+export type MCPServerConfig = StdioServerConfig | HttpServerConfig;
+
+/**
+ * Type guard: Check if config is STDIO transport
+ */
+export function isStdioConfig(config: MCPServerConfig): config is StdioServerConfig {
+  return 'command' in config;
+}
+
+/**
+ * Type guard: Check if config is HTTP transport
+ */
+export function isHttpConfig(config: MCPServerConfig): config is HttpServerConfig {
+  return 'type' in config && config.type === 'http';
+}
+
+/**
+ * Process tracking information for cleanup
+ */
+export interface ProcessInfo {
+  /** Process ID */
+  pid: number;
+  /** Server name */
+  serverName: string;
 }
 
 /**

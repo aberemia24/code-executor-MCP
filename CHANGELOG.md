@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-01-09
+
+### Added
+- ✨ **HTTP/SSE Transport Support** - Connect to remote MCP servers (Linear, GitHub, etc.)
+  - StreamableHTTP transport (modern, bidirectional)
+  - SSE (Server-Sent Events) transport fallback
+  - Authentication via HTTP headers (Bearer tokens, custom headers)
+  - Automatic transport fallback (StreamableHTTP → SSE)
+- ✨ **Multi-Transport Architecture** - Unified dispatcher for STDIO and HTTP transports
+- ✨ **Process Cleanup** - Graceful shutdown for STDIO servers (SIGTERM → SIGKILL)
+
+### Changed
+- 🔧 **Type System** - Split `MCPServerConfig` into `StdioServerConfig` and `HttpServerConfig`
+- 🔧 **Client Pool** - Enhanced connection logic with transport-specific handlers
+- 📖 **Documentation** - Added HTTP/SSE configuration examples to README
+
+### Technical Details
+- **Transports**: STDIO (local processes) + StreamableHTTP/SSE (remote servers)
+- **Authentication**: Full HTTP header support for OAuth/token-based auth
+- **Fallback**: Automatic StreamableHTTP → SSE transition
+- **Cleanup**: Graceful process termination with 2-second timeout
+
 ## [1.0.0] - 2025-01-09
 
 ### Added

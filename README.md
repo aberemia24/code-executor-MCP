@@ -5,7 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.x-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen.svg)](https://github.com/aberemia24/code-executor-MCP)
+[![Tests](https://img.shields.io/badge/tests-122%20passing-brightgreen.svg)](https://github.com/aberemia24/code-executor-MCP)
+
+> **Based on** [Anthropic's official guide to Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp)
 
 ## 🎯 The Problem
 
@@ -172,6 +174,67 @@ Add to your `.mcp.json` (Claude Code, Cline, etc.):
   }
 }
 ```
+
+### MCP Transport Types
+
+Code-executor supports **two transport types** for connecting to other MCP servers:
+
+#### 1. STDIO (Local Servers)
+
+For local MCP servers spawned as child processes:
+
+```json
+{
+  "mcpServers": {
+    "zen": {
+      "command": "npx",
+      "args": ["-y", "zen-mcp-server"],
+      "env": {
+        "GEMINI_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+#### 2. HTTP/SSE (Remote Servers)
+
+For remote HTTP-based MCP servers (Linear, GitHub, etc.) with authentication:
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-token-here"
+      }
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.github.com/mcp",
+      "headers": {
+        "Authorization": "token ghp_your_token_here",
+        "Accept": "application/vnd.github.v3+json"
+      }
+    }
+  }
+}
+```
+
+**How it works:**
+- Code-executor tries **StreamableHTTP first** (modern, bidirectional)
+- Falls back to **SSE** (Server-Sent Events) if StreamableHTTP unavailable
+- Supports authentication via HTTP headers (`Authorization`, custom headers)
+
+**Use cases:**
+- ✅ Linear MCP (project management via HTTP)
+- ✅ GitHub MCP (repository operations via API)
+- ✅ Any OAuth/token-authenticated MCP service
+- ✅ Internal company MCP servers
+
+> **⚠️ Important:** Code-executor reads MCP servers from the **project-level `.mcp.json`** file (configured via `mcpConfigPath` in `.code-executor.json`). It does **NOT** read from user-level MCP configs like `~/.config/claude/claude_desktop_config.json`. All MCP servers must be defined in your project's `.mcp.json`.
 
 ### Execute TypeScript
 
