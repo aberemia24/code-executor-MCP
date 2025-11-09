@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+.pnp
+.pnp.js
+
+# Build artifacts (keep dist - we need it!)
+# dist
+build
+*.tsbuildinfo
+
+# Tests
+tests/
+*.test.ts
+*.spec.ts
+coverage/
+.nyc_output
+
+# Documentation
+docs/
+*.md
+!README.md
+SECURITY.md.backup
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+.code-executor.json
+
+# Logs
+*.log
+audit.log
+logs/
+
+# Misc
+.npmrc
+.editorconfig
+.prettierrc
+.eslintrc
+vitest.config.ts
+tsconfig.json
