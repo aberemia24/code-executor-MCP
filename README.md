@@ -243,6 +243,84 @@ print(json.dumps(result, indent=2))
 }
 ```
 
+## 🛠️ Creating MCP Tool Wrappers
+
+### Why We Don't Ship Wrappers
+
+**MCP servers update independently.** Their APIs can change at any time without warning.
+
+**Real example from January 2025:**
+- Zen MCP changed parameter names: `cli_name` → `model`, `query` → `step`
+- Changed data types: `findings: []` → `findings: ''`
+- **If we shipped wrappers, they'd be broken** ❌
+
+**The solution:** You create and maintain wrappers that match YOUR installed MCP server versions.
+
+### Copy-Paste Templates
+
+We provide **battle-tested templates** instead of shipped code:
+
+```typescript
+// Copy template to your project
+cp node_modules/code-executor-mcp/docs/examples/zen-wrapper-template.ts \
+   src/lib/mcp/zen.ts
+
+// Adapt to your environment
+export async function zenThinkDeep(question: string) {
+  const result = await callMCPTool('mcp__zen__thinkdeep', {
+    // Update params to match YOUR zen version
+    step: question,
+    step_number: 1,
+    total_steps: 1,
+    next_step_required: false,
+    findings: '',
+    model: 'gemini-2.5-pro'
+  });
+  return typeof result === 'string' ? JSON.parse(result) : result;
+}
+
+// Use it
+import { zenThinkDeep } from './lib/mcp/zen';
+const analysis = await zenThinkDeep('How to optimize this?');
+```
+
+### Available Templates
+
+- **`docs/examples/zen-wrapper-template.ts`** - AI analysis tools (thinkdeep, codereview, etc.)
+- **`docs/examples/filesystem-wrapper-template.ts`** - File operations (read, write, search)
+- **`docs/examples/CREATING_WRAPPERS.md`** - Complete guide for creating your own
+
+### Benefits of This Approach
+
+✅ **Your wrappers match YOUR MCP server versions**
+✅ **You update when YOU update MCP servers**
+✅ **No dependency on our release schedule**
+✅ **No "broken package" issues**
+✅ **Full TypeScript autocomplete in your IDE**
+
+### Quick Start
+
+**1. Copy template:**
+```bash
+cp docs/examples/zen-wrapper-template.ts src/lib/mcp/zen.ts
+```
+
+**2. Adapt to your environment:**
+```typescript
+// You own this file - update when zen updates
+export async function zenThinkDeep(question: string) { /* ... */ }
+```
+
+**3. Use throughout your project:**
+```typescript
+import { zenThinkDeep } from './lib/mcp/zen';
+const result = await zenThinkDeep('question');
+```
+
+**See `docs/examples/CREATING_WRAPPERS.md` for complete guide.**
+
+---
+
 ## 🔒 Security Model
 
 ### Principle of Least Privilege
