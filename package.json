@@ -50,15 +50,18 @@
   "homepage": "https://github.com/aberemia24/code-executor-MCP#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "ajv": "^8.17.1",
     "ws": "^8.18.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/async-lock": "^1.4.2",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
     "@typescript-eslint/eslint-plugin": "^8.46.3",
     "@typescript-eslint/parser": "^8.46.3",
     "@vitest/coverage-v8": "^4.0.8",
+    "async-lock": "^1.4.1",
     "eslint": "^9.39.1",
     "typescript": "^5.6.3",
     "vitest": "^4.0.8"

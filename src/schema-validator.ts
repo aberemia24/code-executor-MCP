@@ -1,10 +1,11 @@
 /**
  * Schema Validator Module
  *
- * Validates tool call parameters against JSON schemas.
- * Provides clear, actionable error messages when validation fails.
+ * Validates tool call parameters against JSON schemas using AJV.
+ * Provides deep recursive validation with clear, actionable error messages.
  */
 
+import { Ajv } from 'ajv';
 import type { ToolSchema } from './schema-cache.js';
 
 export interface ValidationResult {
@@ -16,72 +17,85 @@ export interface ValidationResult {
 }
 
 export class SchemaValidator {
+  private ajv: Ajv;
+
+  constructor() {
+    // Initialize AJV with strict mode for comprehensive validation
+    this.ajv = new Ajv({
+      allErrors: true, // Collect all errors, not just the first one
+      strict: false, // Allow JSON Schema features not in strict mode
+      validateFormats: true, // Validate string formats (email, uri, etc.)
+      verbose: true, // Include schema and data in errors
+    });
+  }
+
   /**
-   * Validate parameters against a tool schema
+   * Validate parameters against a tool schema using AJV (deep, recursive validation)
    */
   validate(params: any, schema: ToolSchema): ValidationResult {
+    // Use AJV to validate against the JSON Schema
+    const validate = this.ajv.compile(schema.inputSchema);
+    const valid = validate(params);
+
+    if (valid) {
+      return { valid: true };
+    }
+
+    // Parse AJV errors into our format
     const errors: string[] = [];
     const missing: string[] = [];
     const unexpected: string[] = [];
     const typeMismatch: Array<{ param: string; expected: string; got: string }> = [];
 
-    const inputSchema = schema.inputSchema;
-    const properties = inputSchema.properties || {};
-    const required = inputSchema.required || [];
+    for (const error of validate.errors || []) {
+      const paramPath = error.instancePath.replace(/^\//, '').replace(/\//g, '.');
+      const paramName = paramPath || 'root';
 
-    // Check for missing required parameters
-    for (const requiredParam of required) {
-      if (!(requiredParam in params)) {
-        missing.push(requiredParam);
-      }
-    }
+      switch (error.keyword) {
+        case 'required':
+          missing.push(error.params.missingProperty);
+          errors.push(`Missing required parameter: ${error.params.missingProperty}`);
+          break;
 
-    // Check for unexpected parameters
-    const allowedParams = Object.keys(properties);
-    for (const providedParam of Object.keys(params)) {
-      if (!allowedParams.includes(providedParam)) {
-        unexpected.push(providedParam);
-      }
-    }
+        case 'additionalProperties':
+          unexpected.push(error.params.additionalProperty);
+          errors.push(`Unexpected parameter: ${error.params.additionalProperty}`);
+          break;
 
-    // Check for type mismatches
-    for (const [paramName, paramValue] of Object.entries(params)) {
-      const paramSchema = properties[paramName];
-      if (!paramSchema) continue; // Already flagged as unexpected
+        case 'type':
+          typeMismatch.push({
+            param: paramName,
+            expected: error.params.type,
+            got: typeof error.data,
+          });
+          errors.push(
+            `Type mismatch for "${paramName}": expected ${error.params.type}, got ${typeof error.data}`
+          );
+          break;
 
-      const expectedType = paramSchema.type;
-      const actualType = this.getType(paramValue);
+        case 'enum':
+          errors.push(
+            `Invalid value for "${paramName}": must be one of ${JSON.stringify(error.params.allowedValues)}`
+          );
+          break;
 
-      if (!this.typesMatch(actualType, expectedType, paramValue)) {
-        typeMismatch.push({
-          param: paramName,
-          expected: this.formatExpectedType(paramSchema),
-          got: actualType,
-        });
-      }
-    }
+        case 'minimum':
+        case 'maximum':
+        case 'minLength':
+        case 'maxLength':
+        case 'pattern':
+          errors.push(`${error.message} for "${paramName}"`);
+          break;
 
-    // Build error messages
-    if (missing.length > 0) {
-      errors.push(`Missing required parameters: ${missing.join(', ')}`);
-    }
-
-    if (unexpected.length > 0) {
-      errors.push(`Unexpected parameters: ${unexpected.join(', ')}`);
-    }
-
-    if (typeMismatch.length > 0) {
-      for (const mismatch of typeMismatch) {
-        errors.push(
-          `Type mismatch for "${mismatch.param}": ` +
-          `expected ${mismatch.expected}, got ${mismatch.got}`
-        );
+        default:
+          // Generic error for other validation failures
+          errors.push(error.message || `Validation failed for "${paramName}"`);
       }
     }
 
     return {
-      valid: errors.length === 0,
-      errors: errors.length > 0 ? errors : undefined,
+      valid: false,
+      errors,
       missing: missing.length > 0 ? missing : undefined,
       unexpected: unexpected.length > 0 ? unexpected : undefined,
       typeMismatch: typeMismatch.length > 0 ? typeMismatch : undefined,
@@ -116,7 +130,7 @@ export class SchemaValidator {
       lines.push('  Required:');
       for (const param of required) {
         const propSchema = properties[param];
-        const typeInfo = propSchema ? this.formatExpectedType(propSchema) : 'any';
+        const typeInfo = propSchema?.type || 'any';
         const desc = propSchema?.description ? ` - ${propSchema.description}` : '';
         lines.push(`    • ${param}: ${typeInfo}${desc}`);
       }
@@ -128,7 +142,7 @@ export class SchemaValidator {
       lines.push('  Optional:');
       for (const param of optional) {
         const propSchema = properties[param];
-        const typeInfo = this.formatExpectedType(propSchema);
+        const typeInfo = propSchema?.type || 'any';
         const desc = propSchema?.description ? ` - ${propSchema.description}` : '';
         lines.push(`    • ${param}: ${typeInfo}${desc}`);
       }
@@ -142,61 +156,4 @@ export class SchemaValidator {
     return lines.join('\n');
   }
 
-  /**
-   * Get JavaScript type of a value
-   */
-  private getType(value: any): string {
-    if (value === null) return 'null';
-    if (Array.isArray(value)) return 'array';
-    return typeof value;
-  }
-
-  /**
-   * Check if types match (handles JSON Schema types)
-   */
-  private typesMatch(actualType: string, expectedType: string | string[] | undefined, value: any): boolean {
-    // If no expected type specified, accept any type (permissive)
-    if (expectedType === undefined || expectedType === null) {
-      return true;
-    }
-
-    // Handle array of types
-    if (Array.isArray(expectedType)) {
-      return expectedType.some(t => this.typesMatch(actualType, t, value));
-    }
-
-    // Type aliases: JSON Schema "integer" maps to JS number that's an integer
-    if (expectedType === 'integer' && actualType === 'number') {
-      return Number.isInteger(value);
-    }
-
-    return actualType === expectedType;
-  }
-
-  /**
-   * Format expected type for human readability
-   */
-  private formatExpectedType(schema: any): string {
-    if (!schema) return 'any';
-
-    const type = schema.type;
-
-    if (Array.isArray(type)) {
-      return type.join(' | ');
-    }
-
-    if (type === 'array') {
-      const items = schema.items;
-      if (items) {
-        return `array<${this.formatExpectedType(items)}>`;
-      }
-      return 'array';
-    }
-
-    if (type === 'object') {
-      return 'object';
-    }
-
-    return type || 'any';
-  }
 }

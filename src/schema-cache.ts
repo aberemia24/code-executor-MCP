@@ -4,12 +4,14 @@
  * Caches MCP tool schemas fetched from servers to avoid repeated network calls.
  * Schemas are cached with TTL (default 24 hours) and persisted to disk.
  * Uses failure-triggered refresh: only re-fetches when schema validation fails.
+ * Thread-safe disk writes using async-lock mutex.
  */
 
 import type { MCPClientPool } from './mcp-client-pool.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import AsyncLock from 'async-lock';
 
 interface CachedSchema {
   schema: ToolSchema;
@@ -32,6 +34,7 @@ export class SchemaCache {
   private cache = new Map<string, CachedSchema>();
   private readonly ttlMs: number;
   private readonly cachePath: string;
+  private readonly lock: AsyncLock;
 
   constructor(
     private mcpClientPool: MCPClientPool,
@@ -39,6 +42,7 @@ export class SchemaCache {
   ) {
     this.ttlMs = ttlMs;
     this.cachePath = path.join(os.homedir(), '.code-executor', 'schema-cache.json');
+    this.lock = new AsyncLock();
   }
 
   /**
@@ -64,20 +68,23 @@ export class SchemaCache {
   }
 
   /**
-   * Save cache to disk
+   * Save cache to disk (thread-safe with mutex lock)
    */
   private async saveToDisk(): Promise<void> {
-    try {
-      // Ensure directory exists
-      await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
+    // Use lock to prevent concurrent writes (race condition fix)
+    await this.lock.acquire('disk-write', async () => {
+      try {
+        // Ensure directory exists
+        await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
 
-      // Convert Map to JSON object
-      const cacheObject = Object.fromEntries(this.cache.entries());
+        // Convert Map to JSON object
+        const cacheObject = Object.fromEntries(this.cache.entries());
 
-      await fs.writeFile(this.cachePath, JSON.stringify(cacheObject, null, 2), 'utf-8');
-    } catch (error) {
-      console.error('⚠️  Failed to save schema cache to disk:', (error as Error).message);
-    }
+        await fs.writeFile(this.cachePath, JSON.stringify(cacheObject, null, 2), 'utf-8');
+      } catch (error) {
+        console.error('⚠️  Failed to save schema cache to disk:', (error as Error).message);
+      }
+    });
   }
 
   /**
