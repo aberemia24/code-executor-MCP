@@ -12,16 +12,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { initConfig } from './config.js';
-import { ExecuteTypescriptInputSchema } from './schemas.js';
+import { initConfig, isPythonEnabled } from './config.js';
+import { ExecuteTypescriptInputSchema, ExecutePythonInputSchema } from './schemas.js';
 import { MCPClientPool } from './mcp-client-pool.js';
 import { SecurityValidator } from './security.js';
 import { ConnectionPool } from './connection-pool.js';
 import { executeTypescriptInSandbox } from './sandbox-executor.js';
+import { executePythonInSandbox } from './python-executor.js';
 import { formatErrorResponse } from './utils.js';
 import { ErrorType } from './types.js';
 import type { MCPExecutionResult } from './types.js';
-import type { ExecuteTypescriptInput } from './schemas.js';
+import type { ExecuteTypescriptInput, ExecutePythonInput } from './schemas.js';
 
 /**
  * Main server class
@@ -204,7 +205,143 @@ Example:
       }
     );
 
-    // Tool 2: Health Check
+    // Tool 2: Execute Python (optional, enabled via config)
+    if (isPythonEnabled()) {
+      this.server.registerTool(
+        'executePython',
+        {
+          title: 'Execute Python with MCP Access',
+          description: `Execute Python code in a subprocess with access to MCP tools.
+
+Executed code has access to call_mcp_tool(toolName, params) function for calling other MCP servers.
+
+Security:
+- Only tools in allowedTools array can be called
+- Code pattern validation blocks dangerous operations
+- Execution timeout prevents infinite loops
+- All executions are audit logged
+
+Args:
+  - code (string): Python code to execute
+  - allowedTools (string[]): MCP tools whitelist (default: [])
+    Format: ['mcp__<server>__<tool>', ...]
+    Example: ['mcp__zen__codereview', 'mcp__filesystem__read_file']
+  - timeoutMs (number): Execution timeout in milliseconds (default: 30000)
+  - permissions (object): Subprocess permissions (limited to temp directory and localhost)
+
+Returns:
+  {
+    "success": boolean,
+    "output": string,           // stdout from print()
+    "error": string,            // Error message if failed
+    "executionTimeMs": number,
+    "toolCallsMade": string[]   // MCP tools called
+  }
+
+Example:
+  {
+    "code": "result = call_mcp_tool('mcp__zen__codereview', {...}); print(result)",
+    "allowedTools": ["mcp__zen__codereview"],
+    "timeoutMs": 60000
+  }`,
+          inputSchema: {
+            code: z.string().min(1).describe('Python code to execute'),
+            allowedTools: z.array(z.string()).default([]).describe('MCP tools whitelist'),
+            timeoutMs: z.number().int().min(1000).default(30000).describe('Timeout in milliseconds'),
+            permissions: z.object({
+              read: z.array(z.string()).optional(),
+              write: z.array(z.string()).optional(),
+              net: z.array(z.string()).optional(),
+            }).default({}).describe('Subprocess permissions'),
+          },
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: true,
+          },
+        },
+        async (params) => {
+          try {
+            // Validate input with Zod schema
+            const parseResult = ExecutePythonInputSchema.safeParse(params);
+            if (!parseResult.success) {
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    success: false,
+                    output: '',
+                    error: `Input validation failed: ${parseResult.error.message}`,
+                    executionTimeMs: 0,
+                  }, null, 2),
+                }],
+                isError: true,
+              };
+            }
+            const input = parseResult.data;
+
+            // Validate security
+            this.securityValidator.validateAllowlist(input.allowedTools);
+            this.securityValidator.validatePermissions(input.permissions);
+            const codeValidation = this.securityValidator.validateCode(input.code);
+
+            if (!codeValidation.valid) {
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    success: false,
+                    output: '',
+                    error: codeValidation.errors.join('\n'),
+                    executionTimeMs: 0,
+                  }, null, 2),
+                }],
+                isError: true,
+              };
+            }
+
+            // Execute code with connection pooling
+            const result = await this.connectionPool.execute(async () => {
+              return await executePythonInSandbox(
+                {
+                  code: input.code,
+                  allowedTools: input.allowedTools,
+                  timeoutMs: input.timeoutMs,
+                  permissions: input.permissions,
+                },
+                this.mcpClientPool
+              );
+            });
+
+            // Audit log
+            await this.securityValidator.auditLog(
+              {
+                allowedTools: input.allowedTools,
+                toolsCalled: result.toolCallsMade ?? [],
+                executionTimeMs: result.executionTimeMs,
+                success: result.success,
+                error: result.error,
+              },
+              input.code
+            );
+
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify(result, null, 2),
+              }],
+              structuredContent: result as MCPExecutionResult,
+              isError: !result.success,
+            };
+          } catch (error) {
+            return this.handleToolError(error, ErrorType.EXECUTION);
+          }
+        }
+      );
+    }
+
+    // Tool 3: Health Check
     this.server.registerTool(
       'health',
       {

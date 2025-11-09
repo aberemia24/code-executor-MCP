@@ -10,9 +10,11 @@ import type { AuditLogEntry, CodeValidationResult, SandboxPermissions } from './
 /**
  * Dangerous code patterns to block
  *
- * Comprehensive patterns to prevent code injection and sandbox escapes
+ * Comprehensive patterns to prevent code injection and sandbox escapes.
+ * Covers both JavaScript/TypeScript and Python dangerous patterns.
  */
 const DANGEROUS_PATTERNS = [
+  // JavaScript/TypeScript patterns
   /\beval\s*\(/gi,                           // eval( with whitespace
   /\['eval'\]|\["eval"\]/gi,                 // globalThis['eval'] or window['eval']
   /\bFunction\s*\(/gi,                       // Function( constructor
@@ -26,6 +28,18 @@ const DANGEROUS_PATTERNS = [
   /\bexec(Sync|File)?\s*\(/gi,               // exec, execSync, execFile
   /setTimeout\s*\(\s*['"`]/gi,               // setTimeout('code')
   /setInterval\s*\(\s*['"`]/gi,              // setInterval('code')
+
+  // Python patterns
+  /\b__import__\s*\(/gi,                     // __import__() - dynamic imports
+  /\bexec\s*\(/gi,                           // exec() - execute arbitrary code
+  /\bcompile\s*\(/gi,                        // compile() - compile code objects
+  /pickle\.loads/gi,                         // pickle.loads() - deserialization RCE
+  /\bos\.system/gi,                          // os.system() - shell command execution
+  /subprocess\.(run|call|Popen|check_output)/gi, // subprocess - process spawning
+  /\bopen\s*\(.*['"]w/gi,                    // open() in write mode (file system access)
+  /\bglobals\s*\(/gi,                        // globals() - access to global scope
+  /\blocals\s*\(/gi,                         // locals() - access to local scope
+  /\b__builtins__/gi,                        // __builtins__ - access to built-in functions
 ] as const;
 
 /**

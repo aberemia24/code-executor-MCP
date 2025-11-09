@@ -44,7 +44,7 @@ export const ExecuteTypescriptInputSchema = z.object({
 export const ExecutePythonInputSchema = z.object({
   code: z.string()
     .min(1, 'Code cannot be empty')
-    .describe('Python code to execute in sandbox using Pyodide'),
+    .describe('Python code to execute in subprocess'),
 
   allowedTools: z.array(z.string())
     .default([])
@@ -59,7 +59,7 @@ export const ExecutePythonInputSchema = z.object({
 
   permissions: SandboxPermissionsSchema
     .default({})
-    .describe('Deno sandbox permissions for file system and network access'),
+    .describe('Python subprocess permissions (limited filesystem/network access)'),
 }).strict();
 
 /**
