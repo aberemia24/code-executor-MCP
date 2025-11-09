@@ -13,11 +13,17 @@
 
 ## 🎯 The Problem
 
-MCP servers with many tools consume excessive context window tokens. For example, a configuration with 47 MCP tools uses ~150,000 tokens just to expose the tool definitions - leaving little room for actual work.
+Tired of constantly toggling MCPs on and off in Claude Code? Need filesystem access, so you enable it. Done with that, now need zen for code review? Disable filesystem, enable zen. It's tedious and wastes context on unused tools.
 
-## ✨ The Solution
+With many MCP servers enabled simultaneously, you can easily hit context limits just loading tool definitions - leaving little room for actual work.
 
-**Progressive Disclosure**: Expose only 2-3 simple tools (`executeTypescript`, `executePython`, `health`) that provide **on-demand access** to all other MCP tools through injected functions. This reduces token usage from ~150,000 to ~1,600 tokens (**98% reduction**).
+## ✨ The Solution: One MCP to Rule Them All
+
+**Keep ALL your MCPs disabled. Enable ONLY code-executor.**
+
+Based on Anthropic's code execution pattern, code-executor exposes just 2 tools (`executeTypescript`, `executePython`) that can access **all your other MCPs on-demand**. No more toggling. No context bloat.
+
+**Progressive Disclosure**: Instead of Claude directly accessing 47 tools (consuming ~150k tokens), Claude writes code that accesses those tools when needed (~1.6k tokens = **98% reduction**).
 
 ### How It Works
 
