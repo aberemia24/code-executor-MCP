@@ -236,6 +236,33 @@ For remote HTTP-based MCP servers (Linear, GitHub, etc.) with authentication:
 
 > **⚠️ Important:** Code-executor reads MCP servers from the **project-level `.mcp.json`** file (configured via `mcpConfigPath` in `.code-executor.json`). It does **NOT** read from user-level MCP configs like `~/.config/claude/claude_desktop_config.json`. All MCP servers must be defined in your project's `.mcp.json`.
 
+#### Authentication Flow for SSE/HTTP MCPs
+
+For SSE MCPs that require OAuth (Linear, GitHub, etc.):
+
+1. **First-time setup** - Authenticate in your MCP client (Claude Desktop, Cline):
+   ```json
+   // In ~/.config/claude/claude_desktop_config.json
+   {
+     "mcpServers": {
+       "linear": {
+         "type": "http",
+         "url": "https://mcp.linear.app/mcp"
+       }
+     }
+   }
+   ```
+
+2. **Complete OAuth flow** - Launch your MCP client, it will open browser for authentication
+
+3. **Copy to project** - Once authenticated, copy the config to your project's `.mcp.json` (authentication tokens are now stored)
+
+4. **Disable in main client** - You can now disable/remove from Claude Desktop config to prevent duplicate loading
+
+5. **Use with code-executor** - Code-executor will use the authenticated session from project `.mcp.json`
+
+> **💡 Tip:** You can **disable** MCPs in your main client without deleting them. Keep them in the config file but mark as disabled - code-executor can still use them while your main client ignores them.
+
 ### Execute TypeScript
 
 ```typescript
