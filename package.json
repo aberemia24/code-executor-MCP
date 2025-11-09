@@ -1,0 +1,55 @@
+{
+  "name": "code-executor-mcp",
+  "version": "1.0.0",
+  "description": "Universal MCP server for executing TypeScript/Python with progressive disclosure (98% token savings)",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "code-executor-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "code-execution",
+    "sandbox",
+    "typescript",
+    "python",
+    "deno",
+    "progressive-disclosure",
+    "claude-code"
+  ],
+  "author": "Beehive Innovations",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/beehiveinnovations/code-executor-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/beehiveinnovations/code-executor-mcp/issues"
+  },
+  "homepage": "https://github.com/beehiveinnovations/code-executor-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "@vitest/coverage-v8": "^4.0.8",
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.8"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

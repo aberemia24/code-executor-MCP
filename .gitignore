@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/
+
+# Test coverage
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+audit.log
+
+# Temp files
+*.tmp
+.temp/
+
+# MCP config (may contain secrets)
+.mcp.json
+.code-executor.json

@@ -1,0 +1,311 @@
+#!/usr/bin/env node
+
+/**
+ * Code Executor MCP Server
+ *
+ * Progressive disclosure MCP server that executes TypeScript/Python code
+ * with integrated MCP client access.
+ *
+ * Reduces token usage by ~98% by exposing only 2 tools instead of 47.
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import { ExecuteTypescriptInputSchema } from './schemas.js';
+import { MCPClientPool } from './mcp-client-pool.js';
+import { SecurityValidator } from './security.js';
+import { ConnectionPool } from './connection-pool.js';
+import { executeTypescriptInSandbox } from './sandbox-executor.js';
+import { formatErrorResponse } from './utils.js';
+import { ErrorType } from './types.js';
+import type { MCPExecutionResult } from './types.js';
+import type { ExecuteTypescriptInput } from './schemas.js';
+
+/**
+ * Main server class
+ */
+class CodeExecutorServer {
+  private server: McpServer;
+  private mcpClientPool: MCPClientPool;
+  private securityValidator: SecurityValidator;
+  private connectionPool: ConnectionPool;
+
+  constructor() {
+    // Initialize MCP server
+    this.server = new McpServer({
+      name: 'code-executor-mcp-server',
+      version: '1.0.0',
+    });
+
+    // Initialize components
+    this.mcpClientPool = new MCPClientPool();
+    this.securityValidator = new SecurityValidator();
+    this.connectionPool = new ConnectionPool(100); // Max 100 concurrent executions
+
+    // Register tools
+    this.registerTools();
+  }
+
+  /**
+   * Handle tool execution errors with standardized response format
+   */
+  private handleToolError(error: unknown, errorType: ErrorType) {
+    const errorResponse = formatErrorResponse(error, errorType);
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify(errorResponse, null, 2),
+      }],
+      isError: true,
+    };
+  }
+
+  /**
+   * Register MCP tools
+   */
+  private registerTools(): void {
+    // Tool 1: Execute TypeScript
+    this.server.registerTool(
+      'executeTypescript',
+      {
+        title: 'Execute TypeScript with MCP Access',
+        description: `Execute TypeScript/JavaScript code in a secure Deno sandbox with access to MCP tools.
+
+Executed code has access to callMCPTool(toolName, params) function for calling other MCP servers.
+Import DopaMind wrappers: import { codereview } from './servers/zen/codereview'
+
+Security:
+- Only tools in allowedTools array can be called
+- Deno sandbox permissions enforce file system and network restrictions
+- Execution timeout prevents infinite loops
+- All executions are audit logged
+
+Args:
+  - code (string): TypeScript/JavaScript code to execute
+  - allowedTools (string[]): MCP tools whitelist (default: [])
+    Format: ['mcp__<server>__<tool>', ...]
+    Example: ['mcp__zen__codereview', 'mcp__filesystem__read_file']
+  - timeoutMs (number): Execution timeout in milliseconds (default: 30000)
+  - permissions (object): Deno sandbox permissions
+    - read (string[]): Allowed read paths
+    - write (string[]): Allowed write paths
+    - net (string[]): Allowed network hosts
+
+Returns:
+  {
+    "success": boolean,
+    "output": string,           // stdout from console.log()
+    "error": string,            // Error message if failed
+    "executionTimeMs": number,
+    "toolCallsMade": string[]   // MCP tools called
+  }
+
+Example:
+  {
+    "code": "const result = await callMCPTool('mcp__zen__codereview', {...}); console.log(result);",
+    "allowedTools": ["mcp__zen__codereview"],
+    "timeoutMs": 60000
+  }`,
+        inputSchema: {
+          code: z.string().min(1).describe('TypeScript/JavaScript code to execute'),
+          allowedTools: z.array(z.string()).default([]).describe('MCP tools whitelist'),
+          timeoutMs: z.number().int().min(1000).default(30000).describe('Timeout in milliseconds'),
+          permissions: z.object({
+            read: z.array(z.string()).optional(),
+            write: z.array(z.string()).optional(),
+            net: z.array(z.string()).optional(),
+          }).default({}).describe('Deno sandbox permissions'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      },
+      async (params) => {
+        try {
+          // Validate input with Zod schema (runtime validation)
+          const parseResult = ExecuteTypescriptInputSchema.safeParse(params);
+          if (!parseResult.success) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  success: false,
+                  output: '',
+                  error: `Input validation failed: ${parseResult.error.message}`,
+                  executionTimeMs: 0,
+                }, null, 2),
+              }],
+              isError: true,
+            };
+          }
+          const input = parseResult.data;
+
+          // Validate security
+          this.securityValidator.validateAllowlist(input.allowedTools);
+          this.securityValidator.validatePermissions(input.permissions);
+          const codeValidation = this.securityValidator.validateCode(input.code);
+
+          if (!codeValidation.valid) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  success: false,
+                  output: '',
+                  error: codeValidation.errors.join('\n'),
+                  executionTimeMs: 0,
+                }, null, 2),
+              }],
+              isError: true,
+            };
+          }
+
+          // Execute code with connection pooling
+          const result = await this.connectionPool.execute(async () => {
+            return await executeTypescriptInSandbox(
+              {
+                code: input.code,
+                allowedTools: input.allowedTools,
+                timeoutMs: input.timeoutMs,
+                permissions: input.permissions,
+              },
+              this.mcpClientPool
+            );
+          });
+
+          // Audit log
+          await this.securityValidator.auditLog(
+            {
+              allowedTools: input.allowedTools,
+              toolsCalled: result.toolCallsMade ?? [],
+              executionTimeMs: result.executionTimeMs,
+              success: result.success,
+              error: result.error,
+            },
+            input.code
+          );
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify(result, null, 2),
+            }],
+            structuredContent: result as MCPExecutionResult,
+            isError: !result.success,
+          };
+        } catch (error) {
+          return this.handleToolError(error, ErrorType.EXECUTION);
+        }
+      }
+    );
+
+    // Tool 2: Health Check
+    this.server.registerTool(
+      'health',
+      {
+        title: 'Server Health Check',
+        description: `Get server health status including audit log, MCP connections, connection pool, and uptime.
+
+Returns:
+  {
+    "healthy": boolean,
+    "auditLog": { "enabled": boolean },
+    "mcpClients": { "connected": number },
+    "connectionPool": { "active": number, "waiting": number, "max": number },
+    "uptime": number
+  }`,
+        inputSchema: {},
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async () => {
+        try {
+          const tools = this.mcpClientPool.listAllTools();
+          const poolStats = this.connectionPool.getStats();
+
+          const health = {
+            healthy: true,
+            auditLog: {
+              enabled: this.securityValidator.isAuditLogEnabled(),
+            },
+            mcpClients: {
+              connected: tools.length,
+            },
+            connectionPool: poolStats,
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+          };
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify(health, null, 2),
+            }],
+            structuredContent: health,
+          };
+        } catch (error) {
+          return this.handleToolError(error, ErrorType.EXECUTION);
+        }
+      }
+    );
+  }
+
+  /**
+   * Start server
+   */
+  async start(): Promise<void> {
+    try {
+      // Initialize MCP client pool
+      console.error('Initializing MCP client pool...');
+      await this.mcpClientPool.initialize();
+
+      const tools = this.mcpClientPool.listAllTools();
+      console.error(`Connected to ${tools.length} MCP tools across multiple servers`);
+
+      // Start stdio transport
+      const transport = new StdioServerTransport();
+      await this.server.connect(transport);
+
+      console.error('Code Executor MCP Server started successfully');
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
+  }
+
+  /**
+   * Shutdown server
+   */
+  async shutdown(): Promise<void> {
+    await this.mcpClientPool.disconnect();
+    process.exit(0);
+  }
+}
+
+// Start server
+const server = new CodeExecutorServer();
+
+// Handle shutdown signals
+process.on('SIGINT', async () => {
+  console.error('Received SIGINT, shutting down...');
+  await server.shutdown();
+});
+
+process.on('SIGTERM', async () => {
+  console.error('Received SIGTERM, shutting down...');
+  await server.shutdown();
+});
+
+// Start server
+server.start().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
