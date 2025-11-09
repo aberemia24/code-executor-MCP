@@ -21,9 +21,11 @@ With many MCP servers enabled simultaneously, you can easily hit context limits 
 
 **Keep ALL your MCPs disabled. Enable ONLY code-executor.**
 
-Based on Anthropic's code execution pattern, code-executor exposes just 2 tools (`executeTypescript`, `executePython`) that can access **all your other MCPs on-demand**. No more toggling. No context bloat.
+Based on Anthropic's code execution pattern, code-executor exposes up to 2 tools (`executeTypescript`, `executePython`) that can access **all your other MCPs on-demand**. No more toggling. No context bloat.
 
 **Progressive Disclosure**: Instead of Claude directly accessing 47 tools (consuming ~150k tokens), Claude writes code that accesses those tools when needed (~1.6k tokens = **98% reduction**).
+
+**Note:** `executeTypescript` requires Deno. Without Deno, only `executePython` is available (still works, just Python-only).
 
 ### How It Works
 
@@ -46,8 +48,8 @@ console.log(result);
 ## 🚀 Features
 
 ### ✅ Executors
-- **TypeScript/JavaScript** - Deno sandbox with fine-grained permissions
-- **Python** - Subprocess execution with MCP access (optional)
+- **TypeScript/JavaScript** - Deno sandbox with fine-grained permissions (requires Deno)
+- **Python** - Subprocess execution with MCP access (enabled via config)
 
 ### ✅ Security
 - **Sandbox execution** - Deno for TypeScript, subprocess for Python
@@ -125,9 +127,19 @@ npm install -g code-executor-mcp
 ### Prerequisites
 
 **For NPM installation:**
-- **Node.js** 22.x or higher
-- **Deno** (for TypeScript execution) - Install from [deno.land](https://deno.land/)
-- **Python** 3.9+ (optional, for Python execution)
+- **Node.js** 22.x or higher (required)
+- **Deno** (recommended, enables TypeScript execution) - Install from [deno.land](https://deno.land/)
+  ```bash
+  # Quick install (Linux/macOS)
+  curl -fsSL https://deno.land/install.sh | sh
+
+  # Or use your package manager
+  brew install deno  # macOS
+  choco install deno  # Windows
+  ```
+- **Python** 3.9+ (optional, enables Python execution)
+
+**Note:** Without Deno, only `executePython` tool will be available. TypeScript execution (`executeTypescript`) requires Deno.
 
 **For Docker installation:**
 - **Docker** 20.10+ and **Docker Compose** 2.0+

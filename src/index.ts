@@ -22,6 +22,7 @@ import { executeTypescriptInSandbox } from './sandbox-executor.js';
 import { executePythonInSandbox } from './python-executor.js';
 import { formatErrorResponse } from './utils.js';
 import { ErrorType } from './types.js';
+import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './deno-checker.js';
 import type { MCPExecutionResult } from './types.js';
 import type { ExecuteTypescriptInput, ExecutePythonInput } from './schemas.js';
 
@@ -34,6 +35,7 @@ class CodeExecutorServer {
   private securityValidator: SecurityValidator;
   private connectionPool: ConnectionPool;
   private rateLimiter: RateLimiter | null = null;
+  private denoAvailable: boolean = false;
 
   constructor() {
     // Initialize MCP server
@@ -49,6 +51,9 @@ class CodeExecutorServer {
 
     // Rate limiter will be initialized after config is loaded
     this.rateLimiter = null;
+
+    // Deno availability checked in start()
+    this.denoAvailable = false;
 
     // Note: registerTools() is called in start() after config initialization
   }
@@ -97,8 +102,9 @@ class CodeExecutorServer {
    * Register MCP tools
    */
   private registerTools(): void {
-    // Tool 1: Execute TypeScript
-    this.server.registerTool(
+    // Tool 1: Execute TypeScript (only if Deno is available)
+    if (this.denoAvailable) {
+      this.server.registerTool(
       'executeTypescript',
       {
         title: 'Execute TypeScript with MCP Access',
@@ -243,6 +249,7 @@ Example:
         }
       }
     );
+    }
 
     // Tool 2: Execute Python (optional, enabled via config)
     if (isPythonEnabled()) {
@@ -454,7 +461,19 @@ Returns:
     console.error('Loading configuration...');
     await initConfig();
 
-    // Register tools (now that config is initialized)
+    // Check Deno availability
+    console.error('Checking Deno availability...');
+    this.denoAvailable = await checkDenoAvailable();
+
+    if (this.denoAvailable) {
+      const version = getDenoVersion();
+      console.error(`✓ Deno ${version ?? 'found'} - TypeScript execution enabled`);
+    } else {
+      console.error(getDenoInstallMessage());
+      console.error(''); // Empty line for readability
+    }
+
+    // Register tools (now that config is initialized and Deno checked)
     this.registerTools();
 
     // Initialize rate limiter if enabled
