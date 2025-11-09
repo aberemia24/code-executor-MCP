@@ -1,0 +1,207 @@
+# AppArmor profile for code-executor-mcp
+# This profile restricts file system access and prevents common escape vectors
+#
+# To install:
+#   sudo cp apparmor-profile /etc/apparmor.d/code-executor-mcp
+#   sudo apparmor_parser -r /etc/apparmor.d/code-executor-mcp
+#
+# To use with Docker:
+#   docker run --security-opt="apparmor=code-executor-mcp" ...
+
+#include <tunables/global>
+
+profile code-executor-mcp flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # Deny dangerous capabilities
+  deny capability sys_admin,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_ptrace,
+  deny capability sys_boot,
+  deny capability sys_time,
+  deny capability sys_tty_config,
+  deny capability sys_pacct,
+  deny capability sys_nice,
+  deny capability sys_resource,
+  deny capability mac_admin,
+  deny capability mac_override,
+  deny capability syslog,
+  deny capability wake_alarm,
+  deny capability block_suspend,
+  deny capability audit_read,
+  deny capability audit_write,
+  deny capability audit_control,
+
+  # Network access (restricted to localhost in Docker config)
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+  network unix stream,
+  network unix dgram,
+
+  # Allow reading application files
+  /app/** r,
+  /app/dist/** r,
+  /app/node_modules/** r,
+
+  # Allow execution of Node.js, Deno, Python
+  /usr/bin/node ix,
+  /usr/bin/deno ix,
+  /usr/bin/python3 ix,
+  /usr/bin/python3.* ix,
+
+  # System libraries (read-only)
+  /lib/** mr,
+  /lib64/** mr,
+  /usr/lib/** mr,
+  /usr/share/** r,
+
+  # /tmp directory (writable for code execution)
+  /tmp/ rw,
+  /tmp/** rw,
+  /tmp/code-executor/ rw,
+  /tmp/code-executor/** rw,
+
+  # /dev access (minimal)
+  /dev/null rw,
+  /dev/zero rw,
+  /dev/random r,
+  /dev/urandom r,
+  /dev/tty rw,
+  /dev/pts/* rw,
+
+  # /proc access (limited)
+  @{PROC}/@{pid}/stat r,
+  @{PROC}/@{pid}/status r,
+  @{PROC}/@{pid}/cmdline r,
+  @{PROC}/@{pid}/environ r,
+  @{PROC}/@{pid}/fd/ r,
+  @{PROC}/@{pid}/fd/* r,
+  @{PROC}/@{pid}/task/ r,
+  @{PROC}/@{pid}/task/@{tid}/stat r,
+  @{PROC}/@{pid}/maps r,
+  @{PROC}/sys/kernel/random/boot_id r,
+  @{PROC}/sys/vm/overcommit_memory r,
+  @{PROC}/cpuinfo r,
+  @{PROC}/meminfo r,
+  @{PROC}/sys/net/ r,
+  @{PROC}/sys/net/** r,
+
+  # Block sensitive /proc paths
+  deny @{PROC}/kcore r,
+  deny @{PROC}/kmsg r,
+  deny @{PROC}/mem r,
+  deny @{PROC}/sysrq-trigger w,
+  deny @{PROC}/sys/kernel/core_pattern w,
+  deny @{PROC}/sys/kernel/modprobe w,
+  deny @{PROC}/sys/vm/panic_on_oom w,
+
+  # /sys access (read-only, minimal)
+  /sys/devices/system/cpu/ r,
+  /sys/devices/system/cpu/** r,
+
+  # Block dangerous /sys paths
+  deny /sys/kernel/debug/ r,
+  deny /sys/kernel/debug/** rw,
+  deny /sys/firmware/ r,
+  deny /sys/firmware/** rw,
+
+  # Block access to security modules
+  deny /sys/kernel/security/ r,
+  deny /sys/kernel/security/** rw,
+
+  # Deny writing to most of filesystem
+  deny / w,
+  deny /app/ w,
+  deny /app/** w,
+  deny /usr/ w,
+  deny /usr/** w,
+  deny /lib/ w,
+  deny /lib/** w,
+  deny /lib64/ w,
+  deny /lib64/** w,
+  deny /etc/ w,
+  deny /etc/** w,
+  deny /bin/ w,
+  deny /bin/** w,
+  deny /sbin/ w,
+  deny /sbin/** w,
+  deny /boot/ rw,
+  deny /boot/** rw,
+  deny /root/ rw,
+  deny /root/** rw,
+
+  # Block device access
+  deny /dev/mem rw,
+  deny /dev/kmem rw,
+  deny /dev/port rw,
+  deny /dev/sd* rw,
+  deny /dev/hd* rw,
+  deny /dev/vd* rw,
+  deny /dev/xvd* rw,
+
+  # Block loading kernel modules
+  deny /lib/modules/ r,
+  deny /lib/modules/** r,
+
+  # Allow reading some system files
+  /etc/ld.so.cache r,
+  /etc/ld.so.preload r,
+  /etc/ld.so.conf r,
+  /etc/ld.so.conf.d/ r,
+  /etc/ld.so.conf.d/** r,
+  /etc/ssl/openssl.cnf r,
+  /etc/ssl/certs/ r,
+  /etc/ssl/certs/** r,
+  /etc/mime.types r,
+  /etc/nsswitch.conf r,
+  /etc/hosts r,
+  /etc/host.conf r,
+  /etc/resolv.conf r,
+  /etc/services r,
+  /etc/protocols r,
+  /etc/localtime r,
+  /etc/timezone r,
+  /etc/passwd r,
+  /etc/group r,
+
+  # Deny access to sensitive files
+  deny /etc/shadow rw,
+  deny /etc/sudoers rw,
+  deny /etc/sudoers.d/ rw,
+  deny /etc/sudoers.d/** rw,
+  deny /etc/ssh/ w,
+  deny /etc/ssh/** w,
+
+  # Signal handling (limited)
+  signal (send) set=(term,kill) peer=code-executor-mcp,
+
+  # Deny ptrace (debugging/profiling)
+  deny ptrace,
+
+  # Deny mount operations
+  deny mount,
+  deny remount,
+  deny umount,
+  deny pivot_root,
+
+  # Deny changing namespace
+  deny change_profile,
+
+  # Specific denials for escape vectors
+  deny /proc/sys/kernel/core_pattern w,
+  deny /proc/sys/kernel/modprobe w,
+  deny /proc/sys/kernel/hotplug w,
+  deny /proc/sys/vm/panic_on_oom w,
+  deny /sys/kernel/uevent_helper w,
+
+  # Audit logging (if enabled)
+  /app/audit.log w,
+  /app/logs/ rw,
+  /app/logs/** rw,
+
+  # Allow minimal signal handling for tini
+  signal (receive) set=(term,kill) peer=unconfined,
+}
