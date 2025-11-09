@@ -53,9 +53,9 @@ Wrappers are auto-generated from `tools/list` schemas, not manually written.
 
 ## Validation
 
-**Runtime parameter validation with clear error messages:**
+**Deep recursive validation with AJV (JSON Schema library):**
 
-All MCP tool calls are validated against live schemas before execution. If parameters are invalid, you get a detailed error explaining what's wrong:
+All MCP tool calls are validated against live schemas before execution using industry-standard AJV validator. Validates nested objects, arrays, constraints, enums, and patterns. If parameters are invalid, you get a detailed error explaining what's wrong:
 
 ```
 Parameter validation failed for "mcp__zen__consensus"
@@ -78,14 +78,17 @@ You provided:
 **Benefits:**
 - 🎯 Catch errors before MCP call (faster feedback)
 - 📚 See expected schema on failure (self-documenting)
-- 🔒 Zero token overhead (validation server-side, schemas cached)
+- 🔒 Zero token overhead (validation server-side, schemas disk-cached)
+- 🔐 Deep validation (nested objects, arrays, min/max, patterns, enums)
+- ⚡ Mutex-locked disk cache (no race conditions, survives restarts)
 
 ## Features
 
 - **Executors:** TypeScript (Deno), Python
 - **Security:** Sandboxed, allowlist, audit logs, rate limiting
+- **Validation:** AJV-based deep validation, disk-cached schemas, mutex-locked
 - **Config:** Auto-discovery, env vars, MCP integration
-- **Quality:** TypeScript, 105 tests, 90%+ coverage
+- **Quality:** TypeScript, 139 tests, 98%+ coverage on validation
 
 ## Installation
 
