@@ -113,9 +113,9 @@ await import('file://${userCodeFile}');
     // Build Deno arguments
     const denoArgs = ['run'];
 
-    // SECURITY: Block environment variable access to prevent secret leakage
-    // (AWS_ACCESS_KEY_ID, DATABASE_URL, etc.)
-    denoArgs.push('--no-env');
+    // SECURITY: Environment variable access blocked by default (no --allow-env)
+    // Deno denies access to environment variables unless explicitly granted
+    // This prevents leakage of secrets (AWS_ACCESS_KEY_ID, DATABASE_URL, etc.)
 
     // SECURITY: Add V8 memory limit to prevent memory exhaustion attacks
     // Limits heap to 128MB - prevents allocation bombs
