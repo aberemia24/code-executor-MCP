@@ -14,8 +14,15 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -27,16 +34,16 @@
     "progressive-disclosure",
     "claude-code"
   ],
-  "author": "Beehive Innovations",
+  "author": "Alexandru Eremia <aberemia@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/beehiveinnovations/code-executor-mcp.git"
+    "url": "https://github.com/aberemia24/code-executor-MCP.git"
   },
   "bugs": {
-    "url": "https://github.com/beehiveinnovations/code-executor-mcp/issues"
+    "url": "https://github.com/aberemia24/code-executor-MCP/issues"
   },
-  "homepage": "https://github.com/beehiveinnovations/code-executor-mcp#readme",
+  "homepage": "https://github.com/aberemia24/code-executor-MCP#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "ws": "^8.18.0",

@@ -71,7 +71,7 @@ When `enableAuditLog: true`, all executions are logged:
 
 If you discover a security vulnerability, please follow these steps:
 
-1. **Email us privately** at security@beehiveinnovations.com
+1. **Email us privately** at aberemia@gmail.com
 2. **Provide details:**
    - Description of the vulnerability
    - Steps to reproduce
@@ -263,9 +263,9 @@ We thank the following security researchers for responsible disclosure:
 
 ## Contact
 
-- **Security Email:** security@beehiveinnovations.com
-- **General Issues:** https://github.com/beehiveinnovations/code-executor-mcp/issues
-- **Documentation:** https://github.com/beehiveinnovations/code-executor-mcp#readme
+- **Security Email:** aberemia@gmail.com
+- **General Issues:** https://github.com/aberemia24/code-executor-MCP/issues
+- **Documentation:** https://github.com/aberemia24/code-executor-MCP#readme
 
 ---
 

@@ -1,0 +1,48 @@
+# Source files
+src/
+tests/
+*.test.ts
+*.spec.ts
+
+# Config files
+tsconfig.json
+vitest.config.ts
+.eslintrc.*
+.prettierrc.*
+
+# Documentation (included via files field in package.json)
+CONTRIBUTING.md
+docs/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# CI/CD
+.github/
+.travis.yml
+.circleci/
+
+# Development
+node_modules/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts (we want dist/ in npm package)
+# dist/ is NOT ignored - it's needed for the package

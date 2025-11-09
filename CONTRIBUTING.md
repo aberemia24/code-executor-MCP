@@ -22,13 +22,13 @@ Be respectful, inclusive, and professional. We're building tools for the communi
 
 2. **Clone your fork:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/code-executor-mcp.git
-   cd code-executor-mcp
+   git clone https://github.com/YOUR_USERNAME/code-executor-MCP.git
+   cd code-executor-MCP
    ```
 
 3. **Add upstream remote:**
    ```bash
-   git remote add upstream https://github.com/beehiveinnovations/code-executor-mcp.git
+   git remote add upstream https://github.com/aberemia24/code-executor-MCP.git
    ```
 
 4. **Install dependencies:**

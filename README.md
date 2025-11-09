@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.x-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen.svg)](https://github.com/beehiveinnovations/code-executor-mcp)
+[![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen.svg)](https://github.com/aberemia24/code-executor-MCP)
 
 ## 🎯 The Problem
 
@@ -375,8 +375,8 @@ Features:
 ### Setup
 
 ```bash
-git clone https://github.com/beehiveinnovations/code-executor-mcp.git
-cd code-executor-mcp
+git clone https://github.com/aberemia24/code-executor-MCP.git
+cd code-executor-MCP
 npm install
 ```
 
