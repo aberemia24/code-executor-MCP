@@ -25,8 +25,12 @@ const BLOCKED_IP_PATTERNS = {
     /^10\.\d+\.\d+\.\d+$/,              // 10.0.0.0/8
     /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/,  // 172.16.0.0/12
     /^192\.168\.\d+\.\d+$/,             // 192.168.0.0/16
-    /^fd[0-9a-f]{2}:/i,                 // IPv6 ULA (Unique Local Address)
-    /^fe80:/i,                          // IPv6 Link-local
+    // IPv6 private ranges
+    /^fd[0-9a-f]{2}:/i,                 // IPv6 ULA (Unique Local Address) fc00::/7
+    /^fc[0-9a-f]{2}:/i,                 // IPv6 ULA (Unique Local Address) fc00::/7
+    /^fe80:/i,                          // IPv6 Link-local fe80::/10
+    /^fec0:/i,                          // IPv6 Site-local (deprecated) fec0::/10
+    /^ff[0-9a-f]{2}:/i,                 // IPv6 Multicast ff00::/8
   ],
 
   // Cloud metadata endpoints
@@ -34,6 +38,8 @@ const BLOCKED_IP_PATTERNS = {
     /^169\.254\.169\.254$/,  // AWS/GCP/Azure/DigitalOcean metadata
     /^metadata\.google\.internal$/i,
     /^169\.254\.169\.253$/,  // OpenStack metadata
+    /^fd00:ec2::254$/i,      // AWS IMDSv2 IPv6
+    /^instance-data\.ec2\.internal$/i, // AWS metadata hostname
   ],
 
   // Link-local addresses
@@ -53,12 +59,25 @@ const BLOCKED_IP_PATTERNS = {
  * isBlockedHost('127.0.0.1') // true - blocked
  * isBlockedHost('10.0.0.1') // true - blocked (private network)
  * isBlockedHost('169.254.169.254') // true - blocked (AWS metadata)
+ * isBlockedHost('::1') // true - blocked (IPv6 localhost)
+ * isBlockedHost('fe80::1') // true - blocked (IPv6 link-local)
  * isBlockedHost('google.com') // false - allowed
  * isBlockedHost('api.github.com') // false - allowed
  */
 export function isBlockedHost(host: string): boolean {
-  // Remove port if present
-  const hostname = host.split(':')[0] ?? host;
+  // Remove port and brackets if present (for IPv6)
+  let hostname = host.split(':')[0] ?? host;
+
+  // Handle IPv6 with brackets [::1]:port
+  if (hostname.includes('[')) {
+    hostname = hostname.replace(/[\[\]]/g, '');
+  }
+
+  // Special handling for full IPv6 addresses with ports
+  // e.g., "fe80::1:8080" should extract "fe80::1"
+  if (isIPv6Format(host)) {
+    hostname = extractIPv6(host);
+  }
 
   // Check all blocked patterns
   for (const category of Object.values(BLOCKED_IP_PATTERNS)) {
@@ -67,6 +86,115 @@ export function isBlockedHost(host: string): boolean {
         return true;
       }
     }
+  }
+
+  // Additional IPv6 checks
+  if (isIPv6Format(hostname)) {
+    return isBlockedIPv6(hostname);
+  }
+
+  return false;
+}
+
+/**
+ * Check if string looks like IPv6 format
+ */
+function isIPv6Format(str: string): boolean {
+  return str.includes(':') && (str.includes('::') || str.match(/:[0-9a-f]/i) !== null);
+}
+
+/**
+ * Extract IPv6 address from string with optional port
+ * e.g., "fe80::1:8080" -> "fe80::1"
+ */
+function extractIPv6(str: string): string {
+  // Remove brackets
+  str = str.replace(/[\[\]]/g, '');
+
+  // If it has a port at the end, remove it
+  // IPv6 addresses have at least 2 colons, ports have 1
+  const parts = str.split(':');
+  if (parts.length > 2) {
+    // Could be IPv6 with or without port
+    // Check if last part is a number (port)
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && /^\d+$/.test(lastPart)) {
+      // Likely a port, remove it
+      return parts.slice(0, -1).join(':');
+    }
+  }
+
+  return str;
+}
+
+/**
+ * Check if IPv6 address is in a blocked range
+ */
+function isBlockedIPv6(ip: string): boolean {
+  const lower = ip.toLowerCase();
+
+  // ::1 - Loopback (already covered by pattern)
+  if (lower === '::1' || lower.startsWith('0000:0000:0000:0000:0000:0000:0000:0001')) {
+    return true;
+  }
+
+  // ::ffff:0:0/96 - IPv4-mapped IPv6
+  if (lower.startsWith('::ffff:')) {
+    // Extract IPv4 part and check if it's private
+    const ipv4Part = lower.substring(7);
+    // Check if IPv4 part matches private patterns
+    return BLOCKED_IP_PATTERNS.privateNetworks.some(p => p.test(ipv4Part)) ||
+           BLOCKED_IP_PATTERNS.localhost.some(p => p.test(ipv4Part));
+  }
+
+  // fe80::/10 - Link-local (already covered by pattern)
+  if (lower.startsWith('fe8') || lower.startsWith('fe9') ||
+      lower.startsWith('fea') || lower.startsWith('feb')) {
+    return true;
+  }
+
+  // fc00::/7 and fd00::/8 - Unique local addresses (already covered by pattern)
+  if (lower.startsWith('fc') || lower.startsWith('fd')) {
+    return true;
+  }
+
+  // ff00::/8 - Multicast (already covered by pattern)
+  if (lower.startsWith('ff')) {
+    return true;
+  }
+
+  // ::/128 - Unspecified address
+  if (lower === '::' || lower === '0000:0000:0000:0000:0000:0000:0000:0000') {
+    return true;
+  }
+
+  // ::ffff:0:0:0/96 - IPv4-compatible IPv6 (deprecated)
+  if (lower.startsWith('::ffff:0:')) {
+    return true;
+  }
+
+  // 64:ff9b::/96 - IPv4/IPv6 translation (may be used for NAT64)
+  // Block to prevent potential SSRF via NAT64
+  if (lower.startsWith('64:ff9b:')) {
+    return true;
+  }
+
+  // 2001::/32 - TEREDO tunneling
+  // Block to prevent tunneling attacks
+  if (lower.startsWith('2001:0:')) {
+    return true;
+  }
+
+  // 2001:db8::/32 - Documentation addresses
+  // Block as they should not be routable
+  if (lower.startsWith('2001:db8:')) {
+    return true;
+  }
+
+  // 2002::/16 - 6to4 addressing
+  // Block to prevent tunneling attacks
+  if (lower.startsWith('2002:')) {
+    return true;
   }
 
   return false;
