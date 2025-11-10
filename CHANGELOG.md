@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2024-11-09
+## [0.3.1] - 2024-11-10
 
 ### Added
 - ✨ **Deep Recursive Validation** - AJV-based JSON Schema validation (replaces shallow validation)
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **⚡ Zero Token Overhead** - Validation server-side, schemas disk-cached
 - **🔐 Deep Validation** - Nested objects, arrays, constraints, enums, patterns
 
-## [1.2.0] - 2024-11-09
+## [0.3.0] - 2024-11-09
 
 ### Added
 - ✨ **Wrapper Utilities Template** - Production-ready shared utilities for all MCP wrappers
@@ -102,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **90% DRY Compliance** - Shared utilities eliminate duplication
 - **Production Ready** - Battle-tested patterns from internal codebase
 
-## [1.1.0] - 2024-11-09
+## [0.2.0] - 2024-11-09
 
 ### Added
 - ✨ **HTTP/SSE Transport Support** - Connect to remote MCP servers (Linear, GitHub, etc.)
@@ -124,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fallback**: Automatic StreamableHTTP → SSE transition
 - **Cleanup**: Graceful process termination with 2-second timeout
 
-## [1.0.0] - 2024-11-09
+## [0.1.0] - 2024-11-09
 
 ### Added
 - ✨ **TypeScript Executor** - Deno sandbox with fine-grained permissions
