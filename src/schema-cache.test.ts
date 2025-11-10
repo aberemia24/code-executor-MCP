@@ -44,6 +44,10 @@ describe('SchemaCache', () => {
   });
 
   afterEach(async () => {
+    // Wait for any pending async operations (fire-and-forget disk writes) to complete
+    // This prevents worker timeout during cleanup
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Clean up test cache file
     try {
       await fs.unlink(testCachePath);
