@@ -9,17 +9,24 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock fs.writeFile to prevent memory leak from fire-and-forget disk writes
+vi.mock('fs/promises', async () => {
+  const actual = await vi.importActual('fs/promises');
+  return {
+    ...actual,
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    mkdir: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 describe('SchemaCache', () => {
   const testCachePath = path.join(os.tmpdir(), 'test-schema-cache.json');
   let mockPool: MCPClientPool;
 
   beforeEach(async () => {
-    // Clean up test cache file
-    try {
-      await fs.unlink(testCachePath);
-    } catch {
-      // Ignore if doesn't exist
-    }
+    // Reset mocks
+    vi.mocked(fs.writeFile).mockClear();
+    vi.mocked(fs.mkdir).mockClear();
 
     // Create mock MCP client pool
     mockPool = {
@@ -44,11 +51,8 @@ describe('SchemaCache', () => {
   });
 
   afterEach(async () => {
-    // Wait for any pending async operations (fire-and-forget disk writes) to complete
-    // This prevents worker timeout during cleanup (CI needs longer delay)
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Clean up test cache file
+    // No longer need delays since fs operations are mocked
+    // Clean up test cache file (no-op since writes are mocked)
     try {
       await fs.unlink(testCachePath);
     } catch {
@@ -57,11 +61,7 @@ describe('SchemaCache', () => {
   });
 
   afterAll(async () => {
-    // Wait for any pending async operations (fire-and-forget disk writes) to complete
-    // This prevents worker timeout during cleanup (CI needs longer delay)
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Final cleanup
+    // Final cleanup (no-op since writes are mocked)
     try {
       await fs.unlink(testCachePath);
     } catch {

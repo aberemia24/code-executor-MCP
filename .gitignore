@@ -72,3 +72,16 @@ docs/source-tree-analysis.md
 vitest.config.ts
 docs/index.md
 docs/architecture.md
+docs/epics.md
+docs/implementation-readiness-report-2025-11-10.md
+docs/PRD.md
+docs/research-technical-2025-11-10.md
+docs/bmm-brainstorming-session-2025-11-10.md
+docs/bmm-architecture-2025-11-10.md
+CLAUDE.md.backup-20251110-151057
+docs/discovery-implementation-analysis.md
+.specify/templates/plan-template.md
+.specify/memory/constitution.md
+.specify/templates/spec-template.md
+.specify/templates/tasks-template.md
+docs/release-workflow.md

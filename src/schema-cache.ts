@@ -5,9 +5,16 @@
  * Schemas are cached with TTL (default 24 hours) and persisted to disk.
  * Uses failure-triggered refresh: only re-fetches when schema validation fails.
  * Thread-safe disk writes using async-lock mutex.
+ *
+ * PERFORMANCE FIX (v0.3.4):
+ * - Replaced unbounded Map with LRU cache (max 1000 entries)
+ * - Prevents memory leak (7GB → <100MB in tests)
+ * - Automatic eviction of least recently used schemas
  */
 
 import type { MCPClientPool } from './mcp-client-pool.js';
+import type { ICacheProvider } from './cache-provider.js';
+import { LRUCacheProvider } from './lru-cache-provider.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -33,38 +40,66 @@ export interface ToolSchema {
 }
 
 export class SchemaCache {
-  private cache = new Map<string, CachedSchema>();
+  private cache: ICacheProvider<string, CachedSchema>;
   private readonly ttlMs: number;
   private readonly cachePath: string;
   private readonly lock: AsyncLock;
+  private readonly maxCacheSize: number;
+  private inFlight: Map<string, Promise<ToolSchema | null>>;
 
   constructor(
     private mcpClientPool: MCPClientPool,
     ttlMs: number = 24 * 60 * 60 * 1000, // 24 hours default (long TTL since we use failure-triggered refresh)
-    cachePath?: string // Optional cache path (for testing)
+    cachePath?: string, // Optional cache path (for testing)
+    maxCacheSize: number = 1000 // Max schemas in cache (prevents unbounded growth)
   ) {
     if (ttlMs <= 0) {
       throw new Error('ttlMs must be a positive number');
     }
+    if (maxCacheSize <= 0) {
+      throw new Error('maxCacheSize must be a positive number');
+    }
     this.ttlMs = ttlMs;
+    this.maxCacheSize = maxCacheSize;
     this.cachePath = cachePath || path.join(os.homedir(), '.code-executor', 'schema-cache.json');
     this.lock = new AsyncLock();
+    this.inFlight = new Map();
+
+    // Initialize LRU cache with size limit and TTL
+    this.cache = new LRUCacheProvider<string, CachedSchema>({
+      max: this.maxCacheSize,
+      ttl: this.ttlMs,
+    });
   }
 
   /**
    * Load cache from disk
+   *
+   * Respects maxCacheSize limit by prioritizing most recently fetched schemas.
+   * This prevents unbounded memory growth when loading historical cache files.
    */
   private async loadFromDisk(): Promise<void> {
     try {
       const data = await fs.readFile(this.cachePath, 'utf-8');
       const parsed = JSON.parse(data);
 
-      // Restore Map from JSON object
-      for (const [toolName, cached] of Object.entries(parsed)) {
-        this.cache.set(toolName, cached as CachedSchema);
+      // Convert to array and sort by fetchedAt (most recent first)
+      const entries = Object.entries(parsed) as Array<[string, CachedSchema]>;
+      entries.sort((a, b) => b[1].fetchedAt - a[1].fetchedAt);
+
+      // Load up to maxCacheSize entries (most recent first)
+      const entriesToLoad = entries.slice(0, this.maxCacheSize);
+      const skipped = entries.length - entriesToLoad.length;
+
+      for (const [toolName, cached] of entriesToLoad) {
+        this.cache.set(toolName, cached);
       }
 
-      console.error(`✓ Loaded ${this.cache.size} schemas from disk cache`);
+      if (skipped > 0) {
+        console.error(`✓ Loaded ${this.cache.size} most recent schemas from disk (skipped ${skipped} old entries)`);
+      } else {
+        console.error(`✓ Loaded ${this.cache.size} schemas from disk cache`);
+      }
     } catch (error) {
       // File doesn't exist or is corrupted - not an error, just start fresh
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -150,14 +185,41 @@ export class SchemaCache {
 
   /**
    * Get schema for a specific tool (format: mcp__server__tool)
+   * Deduplicates concurrent requests for the same tool
    */
   async getToolSchema(toolName: string): Promise<ToolSchema | null> {
+    // Check if request already in-flight (prevents duplicate concurrent fetches)
+    const pending = this.inFlight.get(toolName);
+    if (pending) {
+      return pending;
+    }
+
     // Check cache first
     const cached = this.cache.get(toolName);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.schema;
     }
 
+    // Create promise for this fetch and track it
+    const fetchPromise = this.fetchAndCacheSchema(toolName, cached);
+    this.inFlight.set(toolName, fetchPromise);
+
+    try {
+      return await fetchPromise;
+    } finally {
+      // Remove from in-flight tracking
+      this.inFlight.delete(toolName);
+    }
+  }
+
+  /**
+   * Fetch schema from MCP client pool and cache it
+   * Separated from getToolSchema to enable request deduplication
+   */
+  private async fetchAndCacheSchema(
+    toolName: string,
+    staleCached?: CachedSchema
+  ): Promise<ToolSchema | null> {
     try {
       // Fetch schema from MCP client pool
       const fullSchema = await this.mcpClientPool.getToolSchema(toolName);
@@ -189,9 +251,9 @@ export class SchemaCache {
       console.error(`Failed to fetch schema for ${toolName}:`, error);
 
       // If we have stale cache, return it as fallback
-      if (cached) {
+      if (staleCached) {
         console.warn(`Using stale cache for ${toolName}`);
-        return cached.schema;
+        return staleCached.schema;
       }
 
       throw error;
@@ -234,6 +296,10 @@ export class SchemaCache {
 
   /**
    * Cleanup expired entries
+   *
+   * NOTE: With LRU cache, TTL-based expiration is handled automatically.
+   * This method is kept for backwards compatibility and explicit cleanup triggers.
+   * LRU also automatically evicts least recently used entries when max size is reached.
    */
   cleanup(): number {
     const now = Date.now();

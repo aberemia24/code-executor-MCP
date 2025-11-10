@@ -12,9 +12,10 @@ export default defineConfig({
       '**/dist/**', // Exclude compiled tests to prevent double execution
       '**/*.config.ts',
     ],
+    pool: 'threads', // Use threads instead of forks for better memory management
     poolOptions: {
-      forks: {
-        singleFork: true, // Use single fork to avoid worker pool issues
+      threads: {
+        singleThread: true, // Use single thread to prevent memory accumulation
       },
     },
     coverage: {
