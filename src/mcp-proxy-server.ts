@@ -156,7 +156,11 @@ export class MCPProxyServer {
 
       // SECURITY: Bind explicitly to 127.0.0.1 (not just 'localhost')
       this.server.listen(0, '127.0.0.1', () => {
-        const address = this.server!.address();
+        if (!this.server) {
+          reject(new Error('Server is not initialized'));
+          return;
+        }
+        const address = this.server.address();
         if (address && typeof address !== 'string') {
           this.port = address.port;
           resolve({ port: this.port, authToken: this.authToken });

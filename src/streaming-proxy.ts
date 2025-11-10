@@ -43,7 +43,11 @@ export class StreamingProxy {
 
       // Listen on random port
       this.server.listen(0, 'localhost', () => {
-        const address = this.server!.address();
+        if (!this.server) {
+          reject(new Error('Streaming server is not initialized'));
+          return;
+        }
+        const address = this.server.address();
         if (address && typeof address !== 'string') {
           this.port = address.port;
           resolve(this.port);
