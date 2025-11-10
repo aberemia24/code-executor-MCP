@@ -2,6 +2,12 @@
 
 # SessionStart hook script for automatic dependency installation
 # This script runs automatically when a Claude Code session starts
+# Only runs in remote/web environments (not local)
+
+# Only run in remote environments
+if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
+  exit 0
+fi
 
 set -e  # Exit on error
 
