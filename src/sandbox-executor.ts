@@ -165,7 +165,7 @@ export async function executeTypescriptInSandbox(
       'utf-8'
     );
 
-    // Create wrapper code that injects callMCPTool() + state functions + MCP wrappers and imports user code
+    // Create wrapper code that injects callMCPTool() + discovery functions + MCP wrappers and imports user code
     const wrappedCode = `
 // Injected callMCPTool function with authentication
 globalThis.callMCPTool = async (toolName: string, params: unknown) => {
@@ -185,6 +185,61 @@ globalThis.callMCPTool = async (toolName: string, params: unknown) => {
 
   const result = await response.json();
   return result.result;
+};
+
+// Injected discovery functions
+globalThis.listAvailableTools = async (options?: { filter?: string; server?: string; includeSchema?: boolean }) => {
+  const response = await fetch('http://localhost:${proxyPort}/listAvailableTools', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${authToken}'
+    },
+    body: JSON.stringify(options || {})
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'List available tools failed');
+  }
+
+  return await response.json();
+};
+
+globalThis.getToolSchema = async (toolName: string) => {
+  const response = await fetch('http://localhost:${proxyPort}/getToolSchema', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${authToken}'
+    },
+    body: JSON.stringify({ toolName })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Get tool schema failed');
+  }
+
+  return await response.json();
+};
+
+globalThis.searchTools = async (query: string, limit?: number) => {
+  const response = await fetch('http://localhost:${proxyPort}/searchTools', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${authToken}'
+    },
+    body: JSON.stringify({ query, limit })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Search tools failed');
+  }
+
+  return await response.json();
 };
 
 ${wrappers}

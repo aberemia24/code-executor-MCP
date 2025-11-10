@@ -102,54 +102,24 @@ export class MCPProxyServer {
             chunks.push(chunk as Buffer);
           }
           const body = Buffer.concat(chunks).toString();
-          const { toolName, params } = JSON.parse(body) as {
-            toolName: string;
-            params: unknown;
-          };
 
+          // Route based on URL path
+          const url = req.url || '/';
 
-          // Validate against allowlist
-          if (!this.validator.isAllowed(toolName)) {
-            const allowedTools = this.validator.getAllowedTools();
-            res.writeHead(403);
-            res.end(JSON.stringify({
-              error: `Tool '${toolName}' not in allowlist`,
-              allowedTools: allowedTools.length > 0 ? allowedTools : ['(empty - no tools allowed)'],
-              suggestion: `Add '${toolName}' to allowedTools array`
-            }));
-            return;
+          if (url === '/listAvailableTools') {
+            await this.handleListAvailableTools(body, res);
+          } else if (url === '/getToolSchema') {
+            await this.handleGetToolSchema(body, res);
+          } else if (url === '/searchTools') {
+            await this.handleSearchTools(body, res);
+          } else {
+            // Default: callMCPTool
+            await this.handleCallMCPTool(body, res);
           }
-
-          // Validate parameters against schema
-          const schema = await this.schemaCache.getToolSchema(toolName);
-          if (schema) {
-            const validation = this.schemaValidator.validate(params, schema);
-            if (!validation.valid) {
-              const errorMessage = this.schemaValidator.formatError(
-                toolName,
-                params,
-                schema,
-                validation
-              );
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: errorMessage }));
-              return;
-            }
-          }
-
-          // Track tool call
-          this.tracker.track(toolName);
-
-          // Call MCP tool through pool
-          const result = await this.mcpClientPool.callTool(toolName, params);
-
-          // Return result
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ result }));
         } catch (error) {
           res.writeHead(500);
           res.end(JSON.stringify({
-            error: normalizeError(error, 'MCP tool call failed').message
+            error: normalizeError(error, 'Request failed').message
           }));
         }
       });
@@ -211,6 +181,207 @@ export class MCPProxyServer {
     return this.tracker.getCalls();
   }
 
+  /**
+   * Handle callMCPTool request (default endpoint)
+   */
+  private async handleCallMCPTool(body: string, res: http.ServerResponse): Promise<void> {
+    const { toolName, params } = JSON.parse(body) as {
+      toolName: string;
+      params: unknown;
+    };
+
+    // Validate against allowlist
+    if (!this.validator.isAllowed(toolName)) {
+      const allowedTools = this.validator.getAllowedTools();
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        error: `Tool '${toolName}' not in allowlist`,
+        allowedTools: allowedTools.length > 0 ? allowedTools : ['(empty - no tools allowed)'],
+        suggestion: `Add '${toolName}' to allowedTools array`
+      }));
+      return;
+    }
+
+    // Validate parameters against schema
+    const schema = await this.schemaCache.getToolSchema(toolName);
+    if (schema) {
+      const validation = this.schemaValidator.validate(params, schema);
+      if (!validation.valid) {
+        const errorMessage = this.schemaValidator.formatError(
+          toolName,
+          params,
+          schema,
+          validation
+        );
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: errorMessage }));
+        return;
+      }
+    }
+
+    // Track tool call
+    this.tracker.track(toolName);
+
+    // Call MCP tool through pool
+    const result = await this.mcpClientPool.callTool(toolName, params);
+
+    // Return result
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ result }));
+  }
+
+  /**
+   * Handle listAvailableTools request
+   */
+  private async handleListAvailableTools(body: string, res: http.ServerResponse): Promise<void> {
+    const { filter, server, includeSchema } = JSON.parse(body || '{}') as {
+      filter?: string;
+      server?: string;
+      includeSchema?: boolean;
+    };
+
+    // Get all tools from pool
+    const allTools = this.mcpClientPool.listAllTools();
+
+    // Apply filters
+    let filteredTools = allTools;
+
+    if (server) {
+      filteredTools = filteredTools.filter(tool => tool.server === server);
+    }
+
+    if (filter) {
+      const lowerFilter = filter.toLowerCase();
+      filteredTools = filteredTools.filter(tool =>
+        tool.name.toLowerCase().includes(lowerFilter) ||
+        tool.description.toLowerCase().includes(lowerFilter)
+      );
+    }
+
+    // Build response with full tool names
+    const toolsWithSchemas = await Promise.all(
+      filteredTools.map(async (tool) => {
+        const fullName = `mcp__${tool.server}__${tool.name}`;
+        const result: Record<string, unknown> = {
+          name: fullName,
+          server: tool.server,
+          shortName: tool.name,
+          description: tool.description,
+        };
+
+        // Optionally include schema
+        if (includeSchema) {
+          try {
+            const schema = await this.mcpClientPool.getToolSchema(fullName);
+            if (schema) {
+              result.inputSchema = schema.inputSchema;
+            }
+          } catch {
+            // Silently skip schema fetch errors
+            result.schemaError = 'Failed to fetch schema';
+          }
+        }
+
+        return result;
+      })
+    );
+
+    const response = {
+      tools: toolsWithSchemas,
+      count: toolsWithSchemas.length,
+      totalAvailable: allTools.length,
+    };
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response));
+  }
+
+  /**
+   * Handle getToolSchema request
+   */
+  private async handleGetToolSchema(body: string, res: http.ServerResponse): Promise<void> {
+    const { toolName } = JSON.parse(body) as { toolName: string };
+
+    if (!toolName.startsWith('mcp__')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: `Invalid tool name format. Must start with "mcp__". Example: "mcp__zen__codereview"`,
+        hint: 'Use listAvailableTools() to discover available tool names',
+      }));
+      return;
+    }
+
+    const schema = await this.mcpClientPool.getToolSchema(toolName);
+
+    if (!schema) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: `Tool not found: ${toolName}`,
+        hint: 'Use listAvailableTools() to see available tools',
+      }));
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(schema));
+  }
+
+  /**
+   * Handle searchTools request
+   */
+  private async handleSearchTools(body: string, res: http.ServerResponse): Promise<void> {
+    const { query, limit } = JSON.parse(body) as { query: string; limit?: number };
+    const maxResults = limit ?? 10;
+
+    // Get all tools
+    const allTools = this.mcpClientPool.listAllTools();
+
+    // Simple relevance scoring based on keyword matching
+    const queryWords = query.toLowerCase().split(/\s+/);
+    const scoredTools = allTools.map(tool => {
+      const fullName = `mcp__${tool.server}__${tool.name}`;
+      const searchText = `${tool.name} ${tool.description}`.toLowerCase();
+
+      // Calculate relevance score (0-1)
+      let score = 0;
+
+      for (const word of queryWords) {
+        if (searchText.includes(word)) {
+          // Bonus for matches in name vs description
+          if (tool.name.toLowerCase().includes(word)) {
+            score += 0.5;
+          } else {
+            score += 0.3;
+          }
+        }
+      }
+
+      // Normalize score
+      if (queryWords.length > 0) {
+        score = Math.min(1.0, score / queryWords.length);
+      }
+
+      return {
+        name: fullName,
+        server: tool.server,
+        shortName: tool.name,
+        description: tool.description,
+        relevance: Math.round(score * 100) / 100, // Round to 2 decimals
+      };
+    })
+    .filter(tool => tool.relevance > 0) // Only include matches
+    .sort((a, b) => b.relevance - a.relevance) // Sort by relevance
+    .slice(0, maxResults); // Limit results
+
+    const response = {
+      query,
+      results: scoredTools,
+      count: scoredTools.length,
+    };
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response));
+  }
 
   /**
    * Validate bearer token using constant-time comparison
