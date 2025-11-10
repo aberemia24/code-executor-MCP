@@ -61,3 +61,5 @@ docs/coding-standards.md
 CODE_REVIEW*.md
 DOCKER_TESTING.md
 *.md.backup
+docs/project-scan-report.json
+docs/bmm-workflow-status.yaml
