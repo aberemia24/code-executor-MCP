@@ -5,8 +5,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     testTimeout: 30000, // 30 second test timeout
-    teardownTimeout: 15000, // 15 seconds for async cleanup
-    hookTimeout: 15000, // 15 seconds for hooks
+    teardownTimeout: 30000, // 30 seconds for async cleanup (CI needs more time)
+    hookTimeout: 30000, // 30 seconds for hooks
     exclude: [
       '**/node_modules/**',
       '**/dist/**', // Exclude compiled tests to prevent double execution

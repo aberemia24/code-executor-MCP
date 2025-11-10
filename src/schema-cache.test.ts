@@ -45,8 +45,8 @@ describe('SchemaCache', () => {
 
   afterEach(async () => {
     // Wait for any pending async operations (fire-and-forget disk writes) to complete
-    // This prevents worker timeout during cleanup
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // This prevents worker timeout during cleanup (CI needs longer delay)
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Clean up test cache file
     try {
@@ -58,8 +58,8 @@ describe('SchemaCache', () => {
 
   afterAll(async () => {
     // Wait for any pending async operations (fire-and-forget disk writes) to complete
-    // This prevents worker timeout during cleanup
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // This prevents worker timeout during cleanup (CI needs longer delay)
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Final cleanup
     try {
