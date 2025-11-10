@@ -131,10 +131,14 @@ function normalizeIPEncoding(host: string): string {
       try {
         const octets: number[] = [];
         for (let i = 0; i < parts.length - 1; i++) {
-          octets.push(parseInt(parts[i]!, 10));
+          const part = parts[i];
+          if (part === undefined) continue;
+          octets.push(parseInt(part, 10));
         }
         // Last part represents remaining bytes
-        const lastNum = parseInt(parts[parts.length - 1]!, 10);
+        const lastPart = parts[parts.length - 1];
+        if (lastPart === undefined) return host;
+        const lastNum = parseInt(lastPart, 10);
         const remainingBytes = 4 - octets.length;
 
         if (remainingBytes === 3) {
@@ -188,7 +192,7 @@ export function isBlockedHost(host: string): boolean {
   if (host.includes('[')) {
     // Extract content between brackets
     const match = host.match(/\[([^\]]+)\]/);
-    hostname = match ? match[1]! : host.replace(/[\[\]]/g, '');
+    hostname = match?.[1] ?? host.replace(/[\[\]]/g, '');
   } else if (isIPv6Format(host)) {
     // IPv6 without brackets - extract address (handle ports)
     hostname = extractIPv6(host);

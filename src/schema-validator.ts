@@ -32,7 +32,7 @@ export class SchemaValidator {
   /**
    * Validate parameters against a tool schema using AJV (deep, recursive validation)
    */
-  validate(params: any, schema: ToolSchema): ValidationResult {
+  validate(params: unknown, schema: ToolSchema): ValidationResult {
     // Use AJV to validate against the JSON Schema
     const validate = this.ajv.compile(schema.inputSchema);
     const valid = validate(params);
@@ -105,7 +105,7 @@ export class SchemaValidator {
   /**
    * Generate a human-readable error message
    */
-  formatError(toolName: string, params: any, schema: ToolSchema, result: ValidationResult): string {
+  formatError(toolName: string, params: unknown, schema: ToolSchema, result: ValidationResult): string {
     const lines: string[] = [];
 
     lines.push(`\nParameter validation failed for "${toolName}"\n`);

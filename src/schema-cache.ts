@@ -24,9 +24,11 @@ export interface ToolSchema {
   description?: string;
   inputSchema: {
     type?: string;
-    properties?: Record<string, any>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    properties?: Record<string, any>; // JSON Schema properties can have any structure
     required?: string[];
-    [key: string]: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any; // JSON Schema allows arbitrary additional properties
   };
 }
 

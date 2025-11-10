@@ -14,6 +14,7 @@ import { getMCPConfigPath } from './config.js';
 import { isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
+import type { ToolSchema } from './schema-cache.js';
 
 /**
  * MCP Client Pool
@@ -305,11 +306,7 @@ export class MCPClientPool {
    * @param toolName - Full MCP tool name (e.g., 'mcp__zen__codereview')
    * @returns Full tool schema with inputSchema, or null if not found
    */
-  async getToolSchema(toolName: string): Promise<{
-    name: string;
-    description?: string;
-    inputSchema: any;
-  } | null> {
+  async getToolSchema(toolName: string): Promise<ToolSchema | null> {
     if (!this.initialized) {
       throw new Error('MCPClientPool not initialized. Call initialize() first.');
     }
