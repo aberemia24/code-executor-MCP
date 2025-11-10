@@ -10,9 +10,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import * as fs from 'fs/promises';
-import { spawn } from 'child_process';
 import { getMCPConfigPath } from './config.js';
-import { extractServerName, isValidMCPToolName, normalizeError } from './utils.js';
+import { isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
 
@@ -194,7 +193,7 @@ export class MCPClientPool {
       await client.connect(transport);
       connected = true;
       console.error(`✓ Connected to ${serverName} via StreamableHTTP`);
-    } catch (error) {
+    } catch {
       console.error(`⚠️  StreamableHTTP failed for ${serverName}, trying SSE...`);
     }
 

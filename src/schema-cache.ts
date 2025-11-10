@@ -178,9 +178,6 @@ export class SchemaCache {
       });
 
       // Save to disk asynchronously (don't await to avoid blocking response)
-      // NOTE: This is a fire-and-forget pattern for performance. The .catch()
-      // prevents unhandled rejections. Under persistent I/O failures, this could
-      // accumulate error handlers, but the risk is acceptable for the performance gain.
       this.saveToDisk().catch(err =>
         console.error('⚠️  Failed to save schema cache:', err.message)
       );

@@ -121,7 +121,7 @@ export class StreamingProxy {
     for (const client of this.clients) {
       try {
         client.close();
-      } catch (error) {
+      } catch {
         // Ignore close errors
       }
     }

@@ -114,14 +114,14 @@ export async function isAllowedPath(path: string, allowedRoots: string[]): Promi
             resolvedPath.startsWith(resolvedRoot + sep)) {
           return true;
         }
-      } catch (error) {
+      } catch {
         // Root doesn't exist or not accessible - skip this root
         continue;
       }
     }
 
     return false;
-  } catch (error) {
+  } catch {
     // Path doesn't exist or access denied
     return false;
   }

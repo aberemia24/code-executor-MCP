@@ -92,7 +92,7 @@ export async function checkDenoAvailable(): Promise<boolean> {
     // None of the paths worked
     denoAvailable = false;
     return false;
-  } catch (error) {
+  } catch {
     denoAvailable = false;
     return false;
   }

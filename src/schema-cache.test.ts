@@ -2,7 +2,7 @@
  * Comprehensive tests for SchemaCache
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { SchemaCache } from './schema-cache.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 import * as fs from 'fs/promises';
@@ -44,7 +44,20 @@ describe('SchemaCache', () => {
   });
 
   afterEach(async () => {
-    // Clean up
+    // Clean up test cache file
+    try {
+      await fs.unlink(testCachePath);
+    } catch {
+      // Ignore
+    }
+  });
+
+  afterAll(async () => {
+    // Wait for any pending async operations (fire-and-forget disk writes) to complete
+    // This prevents worker timeout during cleanup
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Final cleanup
     try {
       await fs.unlink(testCachePath);
     } catch {
@@ -163,21 +176,23 @@ describe('SchemaCache', () => {
 
     it('should cleanup expired entries', async () => {
       vi.useFakeTimers();
-      const cache = new SchemaCache(mockPool, 100, testCachePath); // 100ms TTL
+      try {
+        const cache = new SchemaCache(mockPool, 100, testCachePath); // 100ms TTL
 
-      await cache.getToolSchema('mcp__test__tool1');
-      await cache.getToolSchema('mcp__test__tool2');
+        await cache.getToolSchema('mcp__test__tool1');
+        await cache.getToolSchema('mcp__test__tool2');
 
-      expect(cache.getStats().size).toBe(2);
+        expect(cache.getStats().size).toBe(2);
 
-      // Advance time past expiration
-      vi.advanceTimersByTime(150);
+        // Advance time past expiration
+        vi.advanceTimersByTime(150);
 
-      const removed = cache.cleanup();
-      expect(removed).toBe(2);
-      expect(cache.getStats().size).toBe(0);
-
-      vi.useRealTimers();
+        const removed = cache.cleanup();
+        expect(removed).toBe(2);
+        expect(cache.getStats().size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -199,8 +214,8 @@ describe('SchemaCache', () => {
       // Pre-cache one tool
       await cache.getToolSchema('mcp__test__tool1');
 
-      // Wait for async disk save to complete (use longer timeout or proper sync)
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Small delay to let async disk save start (fire-and-forget pattern)
+      await new Promise(resolve => setImmediate(resolve));
 
       // Reset mock to count only pre-populate calls
       vi.mocked(mockPool.getToolSchema).mockClear();
@@ -238,37 +253,39 @@ describe('SchemaCache', () => {
   describe('Concurrent access (race condition)', () => {
     it('should handle concurrent getToolSchema calls', async () => {
       vi.useFakeTimers();
-      const cache = new SchemaCache(mockPool, 24 * 60 * 60 * 1000, testCachePath);
+      try {
+        const cache = new SchemaCache(mockPool, 24 * 60 * 60 * 1000, testCachePath);
 
-      // Make getToolSchema slow to simulate race condition
-      let callCount = 0;
-      mockPool.getToolSchema = vi.fn(async (toolName: string) => {
-        callCount++;
-        // Use Promise with immediate resolution for fake timers
-        await Promise.resolve();
-        return {
-          name: toolName.split('__')[2]!,
-          description: `Schema ${callCount}`,
-          inputSchema: { type: 'object' },
-        };
-      });
+        // Make getToolSchema slow to simulate race condition
+        let callCount = 0;
+        mockPool.getToolSchema = vi.fn(async (toolName: string) => {
+          callCount++;
+          // Use Promise with immediate resolution for fake timers
+          await Promise.resolve();
+          return {
+            name: toolName.split('__')[2]!,
+            description: `Schema ${callCount}`,
+            inputSchema: { type: 'object' },
+          };
+        });
 
-      // Fire multiple concurrent requests
-      const [schema1, schema2, schema3] = await Promise.all([
-        cache.getToolSchema('mcp__test__tool1'),
-        cache.getToolSchema('mcp__test__tool1'),
-        cache.getToolSchema('mcp__test__tool1'),
-      ]);
+        // Fire multiple concurrent requests
+        const [schema1, schema2, schema3] = await Promise.all([
+          cache.getToolSchema('mcp__test__tool1'),
+          cache.getToolSchema('mcp__test__tool1'),
+          cache.getToolSchema('mcp__test__tool1'),
+        ]);
 
-      // All should get the same schema
-      expect(schema1).toEqual(schema2);
-      expect(schema2).toEqual(schema3);
+        // All should get the same schema
+        expect(schema1).toEqual(schema2);
+        expect(schema2).toEqual(schema3);
 
-      // Should only fetch once (first request) or multiple times (no deduplication)
-      // Either behavior is acceptable, just testing it doesn't crash
-      expect(callCount).toBeGreaterThan(0);
-
-      vi.useRealTimers();
+        // Should only fetch once (first request) or multiple times (no deduplication)
+        // Either behavior is acceptable, just testing it doesn't crash
+        expect(callCount).toBeGreaterThan(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

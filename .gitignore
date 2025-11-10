@@ -19,6 +19,19 @@ coverage/
 *.swo
 *~
 
+# AI/Development Tools (user-specific)
+.claude/
+.cursor/
+.codex/
+
+# BMAD Framework (user-specific)
+bmad/
+.bmad/
+.bmad-*/
+**/bmad/
+BMAD*.md
+bmad-*.md
+
 # OS
 .DS_Store
 Thumbs.db
@@ -41,9 +54,21 @@ wrappers/
 
 # Internal documentation (not for public repo)
 CLAUDE.md
+docs/coding-standards.md
 *_TASKS_*.md
 *_TEST*.md
 *_TESTS_*.md
 CODE_REVIEW*.md
 DOCKER_TESTING.md
 *.md.backup
+docs/project-scan-report.json
+docs/bmm-workflow-status.yaml
+docs/api-contracts.md
+docs/data-models.md
+src/schema-cache.test.ts
+src/schema-cache.test.ts
+src/schema-cache.test.ts
+docs/source-tree-analysis.md
+vitest.config.ts
+docs/index.md
+docs/architecture.md

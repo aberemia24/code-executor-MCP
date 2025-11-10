@@ -24,7 +24,6 @@ import { formatErrorResponse } from './utils.js';
 import { ErrorType } from './types.js';
 import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './deno-checker.js';
 import type { MCPExecutionResult } from './types.js';
-import type { ExecuteTypescriptInput, ExecutePythonInput } from './schemas.js';
 
 /**
  * Main server class

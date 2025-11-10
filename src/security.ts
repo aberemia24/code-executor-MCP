@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import { isAuditLogEnabled, getAuditLogPath, getAllowedReadPaths } from './config.js';
 import { isValidMCPToolName, isAllowedPath, hashCode } from './utils.js';
-import { validateNetworkPermissions, isBlockedHost } from './network-security.js';
+import { validateNetworkPermissions } from './network-security.js';
 import type { AuditLogEntry, CodeValidationResult, SandboxPermissions } from './types.js';
 
 /**

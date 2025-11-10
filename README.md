@@ -33,24 +33,6 @@ const result = await callMCPTool('mcp__zen__codereview', {...});
 - 1-2 MCPs (just enable them directly)
 - Simple filesystem/git ops (use Node.js directly)
 
-## Wrappers (Optional)
-
-**Auto-discover tool parameters from MCP schemas:**
-
-```bash
-npm run generate-wrappers  # Queries MCPs, generates ~/.code-executor/wrappers/*.ts
-```
-
-```typescript
-// Before: Blind guessing
-await callMCPTool('mcp__zen__thinkdeep', {...}); // What params?
-
-// After: TypeScript-enforced parameters (auto-discovered from schema)
-await thinkdeep(step, step_number, total_steps, ...)
-```
-
-Wrappers are auto-generated from `tools/list` schemas, not manually written.
-
 ## Validation
 
 **Deep recursive validation with AJV (JSON Schema library):**
@@ -127,6 +109,39 @@ Add to `.mcp.json`:
 ```
 
 **Then disable all other MCPs. Enable only code-executor.**
+
+## Advanced Features
+
+### TypeScript Wrappers (Optional, Not Recommended)
+
+> ⚠️ **NOTE:** Wrappers are **optional** and **not recommended** for most users. Runtime validation (enabled by default) provides the same benefits with zero maintenance.
+
+If you prefer TypeScript autocomplete over runtime validation errors, you can generate type-safe wrappers:
+
+```bash
+npm run generate-wrappers  # Queries MCPs, generates ~/.code-executor/wrappers/*.ts
+```
+
+```typescript
+// Without wrappers (recommended):
+await callMCPTool('mcp__zen__thinkdeep', {...}); // Runtime validation shows schema on error
+
+// With wrappers (optional):
+await thinkdeep(step, step_number, total_steps, ...) // TypeScript autocomplete
+```
+
+**Why validation is better:**
+- ✅ Zero maintenance (uses live schemas automatically)
+- ✅ Self-documenting errors (shows expected schema on failure)
+- ✅ Always up-to-date (no regeneration needed)
+- ✅ Works for all MCPs (even newly added ones)
+
+**When to use wrappers:**
+- You write TypeScript code that calls MCP tools frequently
+- You prefer compile-time over runtime errors
+- You want IDE autocomplete for tool parameters
+
+Wrappers are auto-generated from `tools/list` schemas, not manually written.
 
 ## License
 

@@ -121,7 +121,7 @@ export class ConfigDiscoveryService {
 
       // Resolve env:VAR_NAME references
       return this.resolveEnvReferences(json) as PartialConfig;
-    } catch (error) {
+    } catch {
       // File doesn't exist or is invalid - not an error, just skip
       return null;
     }
