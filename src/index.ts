@@ -109,6 +109,13 @@ class CodeExecutorServer {
         title: 'Execute TypeScript with MCP Access',
         description: `Execute TypeScript/JavaScript code in a secure Deno sandbox with access to MCP tools.
 
+🔍 TOOL DISCOVERY - Use these tools FIRST to discover available capabilities:
+  1. listAvailableTools - List all MCP tools with optional filtering
+  2. searchTools - Search by capability (e.g., "analyze code", "create issues")
+  3. getToolSchema - Get parameter schema for a specific tool
+
+PROACTIVE USAGE: Before writing code, discover what tools are available and their parameters!
+
 Executed code has access to callMCPTool(toolName, params) function for calling other MCP servers.
 Import DopaMind wrappers: import { codereview } from './servers/zen/codereview'
 
@@ -137,6 +144,11 @@ Returns:
     "executionTimeMs": number,
     "toolCallsMade": string[]   // MCP tools called
   }
+
+Workflow Example:
+  Step 1: Call searchTools with query "analyze code" to discover tools
+  Step 2: Call getToolSchema for "mcp__zen__codereview" to see parameters
+  Step 3: Call executeTypescript with the code and allowedTools
 
 Example:
   {
@@ -442,6 +454,330 @@ Returns:
               text: JSON.stringify(health, null, 2),
             }],
             structuredContent: health,
+          };
+        } catch (error) {
+          return this.handleToolError(error, ErrorType.EXECUTION);
+        }
+      }
+    );
+
+    // Tool 4: List Available MCP Tools (NEW - for AI tool discovery)
+    this.server.registerTool(
+      'listAvailableTools',
+      {
+        title: 'List Available MCP Tools',
+        description: `List all available MCP tools that can be called via executeTypescript's callMCPTool() function.
+
+Use this tool to discover what capabilities are available before writing code.
+
+Args:
+  - filter (string, optional): Filter tools by keyword in name or description
+  - server (string, optional): Filter by specific server name
+  - includeSchema (boolean, optional): Include full inputSchema for each tool (default: false)
+
+Returns:
+  {
+    "tools": [
+      {
+        "name": string,           // Full tool name (e.g., "mcp__zen__codereview")
+        "server": string,         // Server name (e.g., "zen")
+        "shortName": string,      // Tool name without prefix (e.g., "codereview")
+        "description": string,    // Tool description
+        "inputSchema": object     // Full JSON schema (only if includeSchema=true)
+      }
+    ],
+    "count": number,
+    "totalAvailable": number
+  }
+
+Example - List all tools:
+  {}
+
+Example - Search for filesystem tools:
+  {
+    "filter": "file"
+  }
+
+Example - Get tools from specific server:
+  {
+    "server": "zen"
+  }
+
+Example - Get full schema for planning:
+  {
+    "filter": "codereview",
+    "includeSchema": true
+  }`,
+        inputSchema: {
+          filter: z.string().optional().describe('Filter by keyword in name or description'),
+          server: z.string().optional().describe('Filter by specific server name'),
+          includeSchema: z.boolean().optional().default(false).describe('Include full inputSchema'),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (params) => {
+        try {
+          const { filter, server, includeSchema } = params as {
+            filter?: string;
+            server?: string;
+            includeSchema?: boolean;
+          };
+
+          // Get all tools from pool
+          const allTools = this.mcpClientPool.listAllTools();
+
+          // Apply filters
+          let filteredTools = allTools;
+
+          if (server) {
+            filteredTools = filteredTools.filter(tool => tool.server === server);
+          }
+
+          if (filter) {
+            const lowerFilter = filter.toLowerCase();
+            filteredTools = filteredTools.filter(tool =>
+              tool.name.toLowerCase().includes(lowerFilter) ||
+              tool.description.toLowerCase().includes(lowerFilter)
+            );
+          }
+
+          // Build response with full tool names
+          const toolsWithSchemas = await Promise.all(
+            filteredTools.map(async (tool) => {
+              const fullName = `mcp__${tool.server}__${tool.name}`;
+              const result: Record<string, unknown> = {
+                name: fullName,
+                server: tool.server,
+                shortName: tool.name,
+                description: tool.description,
+              };
+
+              // Optionally include schema
+              if (includeSchema) {
+                try {
+                  const schema = await this.mcpClientPool.getToolSchema(fullName);
+                  if (schema) {
+                    result.inputSchema = schema.inputSchema;
+                  }
+                } catch {
+                  // Silently skip schema fetch errors
+                  result.schemaError = 'Failed to fetch schema';
+                }
+              }
+
+              return result;
+            })
+          );
+
+          const response = {
+            tools: toolsWithSchemas,
+            count: toolsWithSchemas.length,
+            totalAvailable: allTools.length,
+          };
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify(response, null, 2),
+            }],
+            structuredContent: response,
+          };
+        } catch (error) {
+          return this.handleToolError(error, ErrorType.EXECUTION);
+        }
+      }
+    );
+
+    // Tool 5: Get Tool Schema (NEW - for parameter inspection)
+    this.server.registerTool(
+      'getToolSchema',
+      {
+        title: 'Get MCP Tool Schema',
+        description: `Get the full parameter schema for a specific MCP tool before calling it.
+
+Use this to understand what parameters a tool accepts and plan your code accordingly.
+
+Args:
+  - toolName (string): Full MCP tool name (e.g., "mcp__zen__codereview")
+
+Returns:
+  {
+    "name": string,
+    "description": string,
+    "inputSchema": {
+      "type": "object",
+      "properties": { ... },
+      "required": [ ... ]
+    }
+  }
+
+Example:
+  {
+    "toolName": "mcp__zen__codereview"
+  }`,
+        inputSchema: {
+          toolName: z.string().min(1).describe('Full MCP tool name (e.g., "mcp__zen__codereview")'),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (params) => {
+        try {
+          const { toolName } = params as { toolName: string };
+
+          // Validate tool name format
+          if (!toolName.startsWith('mcp__')) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: `Invalid tool name format. Must start with "mcp__". Example: "mcp__zen__codereview"`,
+                  hint: 'Use listAvailableTools to discover available tool names',
+                }, null, 2),
+              }],
+              isError: true,
+            };
+          }
+
+          // Get schema from pool
+          const schema = await this.mcpClientPool.getToolSchema(toolName);
+
+          if (!schema) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: `Tool not found: ${toolName}`,
+                  hint: 'Use listAvailableTools to see available tools',
+                }, null, 2),
+              }],
+              isError: true,
+            };
+          }
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify(schema, null, 2),
+            }],
+            structuredContent: schema as unknown as Record<string, unknown>,
+          };
+        } catch (error) {
+          return this.handleToolError(error, ErrorType.EXECUTION);
+        }
+      }
+    );
+
+    // Tool 6: Search Tools (NEW - for capability-based discovery)
+    this.server.registerTool(
+      'searchTools',
+      {
+        title: 'Search MCP Tools by Capability',
+        description: `Search for MCP tools by describing what you want to do.
+
+Use this when you know what capability you need but don't know which tool provides it.
+
+Args:
+  - query (string): Natural language query describing the capability
+    Examples: "analyze code", "create issues", "read files", "database", etc.
+  - limit (number, optional): Maximum number of results (default: 10)
+
+Returns:
+  {
+    "query": string,
+    "results": [
+      {
+        "name": string,
+        "server": string,
+        "shortName": string,
+        "description": string,
+        "relevance": number    // 0-1 relevance score
+      }
+    ],
+    "count": number
+  }
+
+Example:
+  {
+    "query": "analyze code quality"
+  }`,
+        inputSchema: {
+          query: z.string().min(1).describe('Natural language capability query'),
+          limit: z.number().int().min(1).max(50).default(10).describe('Maximum results'),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (params) => {
+        try {
+          const { query, limit } = params as { query: string; limit?: number };
+          const maxResults = limit ?? 10;
+
+          // Get all tools
+          const allTools = this.mcpClientPool.listAllTools();
+
+          // Simple relevance scoring based on keyword matching
+          const queryWords = query.toLowerCase().split(/\s+/);
+          const scoredTools = allTools.map(tool => {
+            const fullName = `mcp__${tool.server}__${tool.name}`;
+            const searchText = `${tool.name} ${tool.description}`.toLowerCase();
+
+            // Calculate relevance score (0-1)
+            let score = 0;
+
+            for (const word of queryWords) {
+              if (searchText.includes(word)) {
+                // Bonus for matches in name vs description
+                if (tool.name.toLowerCase().includes(word)) {
+                  score += 0.5;
+                } else {
+                  score += 0.3;
+                }
+              }
+            }
+
+            // Normalize score
+            if (queryWords.length > 0) {
+              score = Math.min(1.0, score / queryWords.length);
+            }
+
+            return {
+              name: fullName,
+              server: tool.server,
+              shortName: tool.name,
+              description: tool.description,
+              relevance: Math.round(score * 100) / 100, // Round to 2 decimals
+            };
+          })
+          .filter(tool => tool.relevance > 0) // Only include matches
+          .sort((a, b) => b.relevance - a.relevance) // Sort by relevance
+          .slice(0, maxResults); // Limit results
+
+          const response = {
+            query,
+            results: scoredTools,
+            count: scoredTools.length,
+          };
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify(response, null, 2),
+            }],
+            structuredContent: response,
           };
         } catch (error) {
           return this.handleToolError(error, ErrorType.EXECUTION);
