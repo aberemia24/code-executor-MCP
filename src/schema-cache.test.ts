@@ -2,7 +2,7 @@
  * Comprehensive tests for SchemaCache
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { SchemaCache } from './schema-cache.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 import * as fs from 'fs/promises';
@@ -45,6 +45,19 @@ describe('SchemaCache', () => {
 
   afterEach(async () => {
     // Clean up test cache file
+    try {
+      await fs.unlink(testCachePath);
+    } catch {
+      // Ignore
+    }
+  });
+
+  afterAll(async () => {
+    // Wait for any pending async operations (fire-and-forget disk writes) to complete
+    // This prevents worker timeout during cleanup
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Final cleanup
     try {
       await fs.unlink(testCachePath);
     } catch {
