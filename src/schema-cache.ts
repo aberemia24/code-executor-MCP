@@ -21,12 +21,12 @@ import * as os from 'os';
 import AsyncLock from 'async-lock';
 
 interface CachedSchema {
-  schema: ToolSchema;
+  schema: CachedToolSchema;
   fetchedAt: number;
   expiresAt: number;
 }
 
-export interface ToolSchema {
+export interface CachedToolSchema {
   name: string;
   description?: string;
   inputSchema: {
@@ -45,7 +45,7 @@ export class SchemaCache {
   private readonly cachePath: string;
   private readonly lock: AsyncLock;
   private readonly maxCacheSize: number;
-  private inFlight: Map<string, Promise<ToolSchema | null>>;
+  private inFlight: Map<string, Promise<CachedToolSchema | null>>;
 
   constructor(
     private mcpClientPool: MCPClientPool,
@@ -187,7 +187,7 @@ export class SchemaCache {
    * Get schema for a specific tool (format: mcp__server__tool)
    * Deduplicates concurrent requests for the same tool
    */
-  async getToolSchema(toolName: string): Promise<ToolSchema | null> {
+  async getToolSchema(toolName: string): Promise<CachedToolSchema | null> {
     // Check if request already in-flight (prevents duplicate concurrent fetches)
     const pending = this.inFlight.get(toolName);
     if (pending) {
@@ -219,7 +219,7 @@ export class SchemaCache {
   private async fetchAndCacheSchema(
     toolName: string,
     staleCached?: CachedSchema
-  ): Promise<ToolSchema | null> {
+  ): Promise<CachedToolSchema | null> {
     try {
       // Fetch schema from MCP client pool
       const fullSchema = await this.mcpClientPool.getToolSchema(toolName);
@@ -229,7 +229,7 @@ export class SchemaCache {
       }
 
       // Cache the schema
-      const schema: ToolSchema = {
+      const schema: CachedToolSchema = {
         name: fullSchema.name,
         description: fullSchema.description,
         inputSchema: fullSchema.inputSchema,

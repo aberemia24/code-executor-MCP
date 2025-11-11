@@ -4,13 +4,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { SchemaValidator } from './schema-validator.js';
-import type { ToolSchema } from './schema-cache.js';
+import type { CachedToolSchema } from './schema-cache.js';
 
 describe('SchemaValidator', () => {
   const validator = new SchemaValidator();
 
   describe('Basic validation', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'test_tool',
       inputSchema: {
         type: 'object',
@@ -52,7 +52,7 @@ describe('SchemaValidator', () => {
     });
 
     it('should detect unexpected params when additionalProperties: false', () => {
-      const strictSchema: ToolSchema = {
+      const strictSchema: CachedToolSchema = {
         name: 'strict_tool',
         inputSchema: {
           type: 'object',
@@ -79,7 +79,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('Nested object validation', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'nested_tool',
       inputSchema: {
         type: 'object',
@@ -130,7 +130,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('Array validation', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'array_tool',
       inputSchema: {
         type: 'object',
@@ -171,7 +171,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('Enum validation', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'enum_tool',
       inputSchema: {
         type: 'object',
@@ -202,7 +202,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('Constraint validation', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'constraint_tool',
       inputSchema: {
         type: 'object',
@@ -292,7 +292,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('Integer vs Number distinction', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'int_tool',
       inputSchema: {
         type: 'object',
@@ -326,7 +326,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('formatError', () => {
-    const schema: ToolSchema = {
+    const schema: CachedToolSchema = {
       name: 'test_tool',
       description: 'A test tool',
       inputSchema: {
