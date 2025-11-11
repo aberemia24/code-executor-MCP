@@ -15,6 +15,7 @@ import { isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
 import type { ToolSchema } from './schema-cache.js';
+import type { ToolSchema as DiscoveryToolSchema } from './types/discovery.js';
 
 /**
  * MCP Client Pool
@@ -348,6 +349,63 @@ export class MCPClientPool {
    */
   hasTool(toolName: string): boolean {
     return this.toolCache.has(toolName);
+  }
+
+  /**
+   * List all tool schemas from all connected MCP servers
+   *
+   * Queries all MCP servers in parallel (Promise.all) and aggregates tool schemas.
+   * This is used by the discovery endpoint to return full tool metadata including
+   * parameter schemas.
+   *
+   * Performance: Parallel queries achieve O(1) amortized latency vs O(n) sequential
+   * for n MCP servers. Target: <100ms P95 for 3 servers.
+   *
+   * Resilient aggregation: If one server fails, returns partial results from
+   * successful servers. Individual server failures are logged but don't block
+   * the overall operation.
+   *
+   * @returns Array of tool schemas from all connected servers
+   *
+   * @example
+   * ```typescript
+   * const schemas = await clientPool.listAllToolSchemas();
+   * // Returns: [{ name: 'mcp__zen__codereview', description: '...', parameters: {...} }, ...]
+   * ```
+   */
+  async listAllToolSchemas(): Promise<DiscoveryToolSchema[]> {
+    if (!this.initialized) {
+      throw new Error('MCPClientPool not initialized. Call initialize() first.');
+    }
+
+    // Query all servers in parallel using Promise.all pattern
+    // This achieves O(1) amortized latency instead of O(n) sequential queries
+    const queries = Array.from(this.clients.entries()).map(
+      async ([serverName, client]) => {
+        try {
+          // Fetch tool list from this server
+          const tools = await client.listTools();
+
+          // Transform to discovery ToolSchema format
+          return tools.tools.map(tool => ({
+            name: `mcp__${serverName}__${tool.name}`,
+            description: tool.description ?? '',
+            parameters: tool.inputSchema,
+          }));
+        } catch (error) {
+          // Resilient aggregation: log error but return empty array
+          // This allows partial results if one server fails
+          console.error(`Failed to list tools from ${serverName}:`, error);
+          return [];
+        }
+      }
+    );
+
+    // Execute all queries in parallel and aggregate results
+    const results = await Promise.all(queries);
+
+    // Flatten nested arrays: [[tools1], [tools2]] → [tools1, tools2]
+    return results.flat();
   }
 
   /**
