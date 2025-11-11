@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Test coverage
+coverage/
+
+# Generated files
+*.min.js
+*.bundle.js
+
+# Configuration files
+*.config.js
+*.config.mjs
+
+# Temporary files
+*.tmp
+.temp/
+
+# IDE
+.vscode/
+.idea/
