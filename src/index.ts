@@ -112,6 +112,30 @@ class CodeExecutorServer {
 Executed code has access to callMCPTool(toolName, params) function for calling other MCP servers.
 Import DopaMind wrappers: import { codereview } from './servers/zen/codereview'
 
+**NEW: In-Sandbox Tool Discovery**
+Three discovery functions are injected into the sandbox for self-service tool exploration:
+
+1. discoverMCPTools(options?) - Discover all available MCP tools
+   - Options: { search?: string[] } - Array of keywords to filter tools (OR logic)
+   - Returns: ToolSchema[] - Array of tool schemas
+   - Example: const tools = await discoverMCPTools({ search: ['file', 'read'] });
+
+2. getToolSchema(toolName) - Get detailed schema for a specific tool
+   - Parameter: toolName (string) - Full tool name (e.g., 'mcp__filesystem__read_file')
+   - Returns: ToolSchema | null - Tool schema or null if not found
+   - Example: const schema = await getToolSchema('mcp__filesystem__read_file');
+
+3. searchTools(query, limit?) - Search tools by keywords with result limiting
+   - Parameters: query (string), limit (number, default: 10)
+   - Returns: ToolSchema[] - Filtered and limited tool schemas
+   - Example: const fileTools = await searchTools('file read write', 5);
+
+**Proactive Workflow Example:**
+// Discover tools, inspect schema, then execute
+const networkTools = await searchTools('fetch url');
+const schema = await getToolSchema(networkTools[0].name);
+const result = await callMCPTool(networkTools[0].name, { url: 'https://...' });
+
 Security:
 - Only tools in allowedTools array can be called
 - Deno sandbox permissions enforce file system and network restrictions
