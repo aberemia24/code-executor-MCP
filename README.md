@@ -150,3 +150,7 @@ MIT
 ---
 
 Full docs: [GitHub](https://github.com/aberemia24/code-executor-MCP)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=aberemia24/code-executor-MCP&type=timeline&logscale&legend=bottom-right)](https://www.star-history.com/#aberemia24/code-executor-MCP&type=timeline&logscale&legend=bottom-right)
