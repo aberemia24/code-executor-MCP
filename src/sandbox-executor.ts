@@ -157,7 +157,7 @@ globalThis.discoverMCPTools = async (options?: { search?: string[] }): Promise<T
       },
       // PERFORMANCE (Constitutional Principle 8): Timeout prevents hanging
       // Meets NFR-2 requirement (<100ms P95 latency for normal case)
-      signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS)
+      signal: AbortSignal.timeout(${DISCOVERY_TIMEOUT_MS})
     });
 
     // T073: Throw descriptive error if response not ok
@@ -183,7 +183,7 @@ globalThis.discoverMCPTools = async (options?: { search?: string[] }): Promise<T
 
     // Handle timeout errors with clear message
     if (normalizedError.name === 'AbortError' || normalizedError.name === 'TimeoutError') {
-      throw new Error(\`MCP tool discovery timed out after \${DISCOVERY_TIMEOUT_MS}ms\`);
+      throw new Error('MCP tool discovery timed out after ${DISCOVERY_TIMEOUT_MS}ms');
     }
 
     // Re-throw normalized error
