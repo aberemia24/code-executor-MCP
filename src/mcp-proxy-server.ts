@@ -11,6 +11,7 @@ import { normalizeError } from './utils.js';
 import { AllowlistValidator, ToolCallTracker } from './proxy-helpers.js';
 import { SchemaCache } from './schema-cache.js';
 import { SchemaValidator } from './schema-validator.js';
+import { RateLimiter } from './rate-limiter.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 
 /**
@@ -41,23 +42,34 @@ export class MCPProxyServer {
   private tracker: ToolCallTracker;
   private schemaCache: SchemaCache;
   private schemaValidator: SchemaValidator;
+  private rateLimiter: RateLimiter;
+  private discoveryTimeoutMs: number;
 
   /**
    * Create MCP proxy server
    *
    * @param mcpClientPool - Pool of MCP clients to proxy requests to
    * @param allowedTools - Whitelist of allowed MCP tool names
+   * @param discoveryTimeoutMs - Timeout for discovery endpoint queries in milliseconds (default: 500ms)
    *
    * SECURITY: Generates random bearer token for authentication
    */
   constructor(
     private mcpClientPool: MCPClientPool,
-    allowedTools: string[]
+    allowedTools: string[],
+    discoveryTimeoutMs: number = 500
   ) {
     this.validator = new AllowlistValidator(allowedTools);
     this.tracker = new ToolCallTracker();
     this.schemaCache = new SchemaCache(mcpClientPool);
     this.schemaValidator = new SchemaValidator();
+    // Rate limiter: 30 requests per 60 seconds (per spec.md NFR-2)
+    this.rateLimiter = new RateLimiter({
+      maxRequests: 30,
+      windowMs: 60000, // 60 seconds
+    });
+    // Discovery timeout configuration
+    this.discoveryTimeoutMs = discoveryTimeoutMs;
     // Generate cryptographically secure random token (32 bytes = 64 hex chars)
     this.authToken = crypto.randomBytes(32).toString('hex');
   }
@@ -78,80 +90,31 @@ export class MCPProxyServer {
 
     return new Promise((resolve, reject) => {
       this.server = http.createServer(async (req, res) => {
-        // Only accept POST requests
-        if (req.method !== 'POST') {
-          res.writeHead(405);
-          res.end();
+        // Parse URL to route requests
+        const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+        const pathname = url.pathname;
+
+        // Route: GET /mcp/tools → Discovery endpoint
+        if (req.method === 'GET' && pathname === '/mcp/tools') {
+          await this.handleDiscoveryRequest(req, res);
           return;
         }
 
-        // SECURITY: Validate bearer token authentication (constant-time comparison)
-        const authHeader = req.headers['authorization'];
-        if (!this.validateBearerToken(authHeader)) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            error: 'Unauthorized - invalid or missing authentication token'
-          }));
+        // Route: POST / → Tool execution endpoint (existing)
+        if (req.method === 'POST' && pathname === '/') {
+          await this.handleCallMCPTool(req, res);
           return;
         }
 
-        try {
-          // Read request body
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) {
-            chunks.push(chunk as Buffer);
-          }
-          const body = Buffer.concat(chunks).toString();
-          const { toolName, params } = JSON.parse(body) as {
-            toolName: string;
-            params: unknown;
-          };
-
-
-          // Validate against allowlist
-          if (!this.validator.isAllowed(toolName)) {
-            const allowedTools = this.validator.getAllowedTools();
-            res.writeHead(403);
-            res.end(JSON.stringify({
-              error: `Tool '${toolName}' not in allowlist`,
-              allowedTools: allowedTools.length > 0 ? allowedTools : ['(empty - no tools allowed)'],
-              suggestion: `Add '${toolName}' to allowedTools array`
-            }));
-            return;
-          }
-
-          // Validate parameters against schema
-          const schema = await this.schemaCache.getToolSchema(toolName);
-          if (schema) {
-            const validation = this.schemaValidator.validate(params, schema);
-            if (!validation.valid) {
-              const errorMessage = this.schemaValidator.formatError(
-                toolName,
-                params,
-                schema,
-                validation
-              );
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: errorMessage }));
-              return;
-            }
-          }
-
-          // Track tool call
-          this.tracker.track(toolName);
-
-          // Call MCP tool through pool
-          const result = await this.mcpClientPool.callTool(toolName, params);
-
-          // Return result
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ result }));
-        } catch (error) {
-          res.writeHead(500);
-          res.end(JSON.stringify({
-            error: normalizeError(error, 'MCP tool call failed').message
-          }));
-        }
+        // Unrecognized route → 404 Not Found
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Not Found',
+          validRoutes: [
+            'POST / - Execute MCP tool',
+            'GET /mcp/tools - Discover available tools',
+          ],
+        }));
       });
 
       // SECURITY: Bind explicitly to 127.0.0.1 (not just 'localhost')
@@ -253,5 +216,245 @@ export class MCPProxyServer {
       // Any error (including length mismatch) returns false
       return false;
     }
+  }
+
+  /**
+   * Handle POST / - Call MCP Tool (existing functionality)
+   *
+   * SECURITY: Enforces allowlist validation (execution requires explicit permission)
+   */
+  private async handleCallMCPTool(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): Promise<void> {
+    // SECURITY: Validate bearer token authentication (constant-time comparison)
+    const authHeader = req.headers['authorization'];
+    if (!this.validateBearerToken(authHeader)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Unauthorized - invalid or missing authentication token',
+        })
+      );
+      return;
+    }
+
+    try {
+      // Read request body
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk as Buffer);
+      }
+      const body = Buffer.concat(chunks).toString();
+      const { toolName, params } = JSON.parse(body) as {
+        toolName: string;
+        params: unknown;
+      };
+
+      // Validate against allowlist
+      if (!this.validator.isAllowed(toolName)) {
+        const allowedTools = this.validator.getAllowedTools();
+        res.writeHead(403);
+        res.end(
+          JSON.stringify({
+            error: `Tool '${toolName}' not in allowlist`,
+            allowedTools:
+              allowedTools.length > 0
+                ? allowedTools
+                : ['(empty - no tools allowed)'],
+            suggestion: `Add '${toolName}' to allowedTools array`,
+          })
+        );
+        return;
+      }
+
+      // Validate parameters against schema
+      const schema = await this.schemaCache.getToolSchema(toolName);
+      if (schema) {
+        const validation = this.schemaValidator.validate(params, schema);
+        if (!validation.valid) {
+          const errorMessage = this.schemaValidator.formatError(
+            toolName,
+            params,
+            schema,
+            validation
+          );
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: errorMessage }));
+          return;
+        }
+      }
+
+      // Track tool call
+      this.tracker.track(toolName);
+
+      // Call MCP tool through pool
+      const result = await this.mcpClientPool.callTool(toolName, params);
+
+      // Return result
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ result }));
+    } catch (error) {
+      res.writeHead(500);
+      res.end(
+        JSON.stringify({
+          error: normalizeError(error, 'MCP tool call failed').message,
+        })
+      );
+    }
+  }
+
+  /**
+   * Handle GET /mcp/tools - Discovery Endpoint
+   *
+   * SECURITY EXCEPTION (BY DESIGN - Constitutional Principle 2):
+   * This endpoint BYPASSES the allowlist to enable in-sandbox tool discovery.
+   *
+   * JUSTIFICATION (from spec.md Section 2):
+   * - Discovery returns READ-ONLY metadata (tool names, descriptions, parameters)
+   * - Execution (callMCPTool) STILL requires allowlist validation
+   * - Trade-off: Self-service discovery vs explicit permission model
+   * - Risk assessment: LOW (discovery ≠ execution, no side effects)
+   *
+   * See spec.md Section 2 "Constitutional Exceptions" for full rationale.
+   */
+  private async handleDiscoveryRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): Promise<void> {
+    try {
+      // SECURITY: Validate bearer token authentication
+      const authHeader = req.headers['authorization'];
+      if (!this.validateBearerToken(authHeader)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Unauthorized - invalid or missing authentication token',
+          })
+        );
+        return;
+      }
+
+      // Rate limiting: Check limit for this client (using 'default' as client ID)
+      const rateLimit = await this.rateLimiter.checkLimit('default');
+      if (!rateLimit.allowed) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Rate limit exceeded',
+            retryAfter: Math.ceil(rateLimit.resetIn / 1000), // seconds
+            limit: 30,
+            window: '60s',
+          })
+        );
+        return;
+      }
+
+      // Parse query parameters from URL
+      const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+      const searchParams = url.searchParams.getAll('q'); // Get all ?q= parameters
+
+      // Validate search queries
+      const validationError = this.validateSearchQuery(searchParams);
+      if (validationError) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(validationError));
+        return;
+      }
+
+      // Fetch all tool schemas from MCPClientPool with configured timeout
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Request timeout after ${this.discoveryTimeoutMs}ms`)),
+          this.discoveryTimeoutMs
+        )
+      );
+
+      const toolsPromise = this.mcpClientPool.listAllToolSchemas(this.schemaCache);
+
+      const allTools = await Promise.race([toolsPromise, timeoutPromise]);
+
+      // Filter tools by search keywords (OR logic, case-insensitive)
+      const filteredTools = this.filterToolsByKeywords(allTools, searchParams);
+
+      // Audit log: Discovery request
+      console.error(JSON.stringify({
+        action: 'discovery',
+        endpoint: '/mcp/tools',
+        searchTerms: searchParams,
+        resultsCount: filteredTools.length,
+        clientId: 'default',
+        timestamp: new Date().toISOString(),
+      }));
+
+      // Return JSON response with tool schemas
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          tools: filteredTools,
+        })
+      );
+    } catch (error) {
+      // Error handling
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: normalizeError(error, 'Discovery request failed').message,
+        })
+      );
+    }
+  }
+
+  /**
+   * Validate search query parameters (SRP helper)
+   *
+   * @param queries - Array of search query strings
+   * @returns Error object if validation fails, null if valid
+   */
+  private validateSearchQuery(queries: string[]): { error: string; query?: string } | null {
+    for (const query of queries) {
+      // Max length: 100 characters
+      if (query.length > 100) {
+        return {
+          error: 'Search query too long (max 100 characters)',
+          query,
+        };
+      }
+
+      // Allowed characters: alphanumeric, spaces, hyphens, underscores
+      const validPattern = /^[a-zA-Z0-9\s\-_]+$/;
+      if (!validPattern.test(query)) {
+        return {
+          error:
+            'Invalid characters in search query (allowed: alphanumeric, spaces, hyphens, underscores)',
+          query,
+        };
+      }
+    }
+
+    return null; // All queries valid
+  }
+
+  /**
+   * Filter tools by search keywords using OR logic (SRP helper)
+   *
+   * @param tools - Array of tool schemas to filter
+   * @param keywords - Array of search keywords
+   * @returns Filtered tools matching any keyword (case-insensitive)
+   */
+  private filterToolsByKeywords(
+    tools: Array<{ name: string; description: string; parameters: unknown }>,
+    keywords: string[]
+  ): Array<{ name: string; description: string; parameters: unknown }> {
+    // No keywords = return all tools
+    if (keywords.length === 0) {
+      return tools;
+    }
+
+    // Filter using OR logic: tool matches if ANY keyword is found
+    return tools.filter((tool) => {
+      const searchText = `${tool.name} ${tool.description}`.toLowerCase();
+      return keywords.some((keyword) => searchText.includes(keyword.toLowerCase()));
+    });
   }
 }
