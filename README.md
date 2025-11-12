@@ -248,8 +248,11 @@ cd code-executor-mcp
 npm install && npm run build
 npm run server
 
-# Docker (production)
+# Docker (production) - No pre-build required!
+git clone https://github.com/aberemia24/code-executor-MCP.git
+cd code-executor-mcp
 docker-compose up -d
+# Multi-stage build compiles TypeScript automatically
 ```
 
 See [DOCKER_TESTING.md](DOCKER_TESTING.md) for Docker security details.
