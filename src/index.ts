@@ -24,6 +24,7 @@ import { formatErrorResponse } from './utils.js';
 import { ErrorType } from './types.js';
 import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './deno-checker.js';
 import { HealthCheckServer } from './health-check.js';
+import { VERSION } from './version.js';
 import type { MCPExecutionResult } from './types.js';
 
 /**
@@ -42,7 +43,7 @@ class CodeExecutorServer {
     // Initialize MCP server
     this.server = new McpServer({
       name: 'code-executor-mcp-server',
-      version: '0.4.1',
+      version: VERSION,
     });
 
     // Initialize components
@@ -530,7 +531,7 @@ Returns:
       this.healthCheckServer = new HealthCheckServer({
         mcpClientPool: this.mcpClientPool,
         connectionPool: this.connectionPool,
-        version: '0.4.1',
+        version: VERSION,
       });
 
       try {

@@ -120,8 +120,12 @@ describe('HealthCheckServer', () => {
         { name: 'test-tool', description: 'Test tool', inputSchema: {} }
       ]);
 
-      // Mock isAtCapacity to return true
-      vi.spyOn(connectionPool, 'isAtCapacity').mockReturnValue(true);
+      // Mock getStats to return pool at 90%+ capacity (9/10 = 90%)
+      vi.spyOn(connectionPool, 'getStats').mockReturnValue({
+        active: 9,
+        waiting: 0,
+        max: 10,
+      });
 
       const response = await fetch(`http://localhost:${testPort}/ready`);
 
@@ -132,6 +136,29 @@ describe('HealthCheckServer', () => {
       expect(data.checks.connectionPool.ready).toBe(false);
     });
 
+    it('should_return_503_when_requests_waiting', async () => {
+      // Mock listAllTools to return some tools
+      vi.spyOn(mcpClientPool, 'listAllTools').mockReturnValue([
+        { name: 'test-tool', description: 'Test tool', inputSchema: {} }
+      ]);
+
+      // Mock getStats to return pool with waiting requests
+      vi.spyOn(connectionPool, 'getStats').mockReturnValue({
+        active: 5,
+        waiting: 2,
+        max: 10,
+      });
+
+      const response = await fetch(`http://localhost:${testPort}/ready`);
+
+      expect(response.status).toBe(503);
+
+      const data = await response.json();
+      expect(data).toHaveProperty('ready', false);
+      expect(data.checks.connectionPool.ready).toBe(false);
+      expect(data.checks.connectionPool.waiting).toBe(2);
+    });
+
     it('should_return_200_when_ready_to_serve', async () => {
       // Mock listAllTools to return some tools
       vi.spyOn(mcpClientPool, 'listAllTools').mockReturnValue([
@@ -139,8 +166,12 @@ describe('HealthCheckServer', () => {
         { name: 'test-tool-2', description: 'Test tool 2', inputSchema: {} }
       ]);
 
-      // Mock isAtCapacity to return false
-      vi.spyOn(connectionPool, 'isAtCapacity').mockReturnValue(false);
+      // Mock getStats to return pool with capacity (< 90% full)
+      vi.spyOn(connectionPool, 'getStats').mockReturnValue({
+        active: 5,
+        waiting: 0,
+        max: 10,
+      });
 
       const response = await fetch(`http://localhost:${testPort}/ready`);
 

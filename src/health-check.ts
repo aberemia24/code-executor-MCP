@@ -7,6 +7,7 @@
 import { createServer, IncomingMessage, ServerResponse, Server } from 'http';
 import type { MCPClientPool } from './mcp-client-pool.js';
 import type { ConnectionPool } from './connection-pool.js';
+import { VERSION } from './version.js';
 
 /**
  * Health status response format (K8s-compatible)
@@ -80,7 +81,7 @@ export class HealthCheckServer {
     this.connectionPool = options.connectionPool;
     this.port = options.port ?? parseInt(process.env.HEALTH_CHECK_PORT ?? '3000', 10);
     this.host = options.host ?? process.env.HEALTH_CHECK_HOST ?? '0.0.0.0';
-    this.version = options.version ?? '1.0.0';
+    this.version = options.version ?? VERSION;
   }
 
   /**
@@ -112,7 +113,7 @@ export class HealthCheckServer {
    * Returns 200 if ready to serve requests, 503 if not ready
    * Checks:
    * - MCP clients connected
-   * - Connection pool not at capacity
+   * - Connection pool has capacity (< 90% full and no waiting requests)
    */
   private handleReady(res: ServerResponse): void {
     try {
@@ -123,7 +124,9 @@ export class HealthCheckServer {
       const mcpReady = tools.length > 0;
 
       // Check if connection pool has capacity
-      const poolReady = !this.connectionPool.isAtCapacity();
+      // Use 90% threshold to avoid race conditions where pool becomes full
+      // between readiness check and actual request
+      const poolReady = poolStats.active < poolStats.max * 0.9 && poolStats.waiting === 0;
 
       const ready = mcpReady && poolReady;
 
@@ -147,6 +150,9 @@ export class HealthCheckServer {
       // Return 503 if not ready, 200 if ready
       this.sendJSON(res, ready ? 200 : 503, status);
     } catch (error) {
+      // Log error for debugging
+      console.error('Health check /ready error:', error);
+
       // If there's an error checking readiness, return 503
       const status: ReadinessStatus = {
         ready: false,
@@ -245,16 +251,24 @@ export class HealthCheckServer {
       try {
         this.server = createServer((req, res) => this.handleRequest(req, res));
 
-        this.server.on('error', (error: NodeJS.ErrnoException) => {
+        // Attach error handler before calling listen() to catch all errors
+        const errorHandler = (error: NodeJS.ErrnoException) => {
           if (error.code === 'EADDRINUSE') {
             console.error(`Health check port ${this.port} is already in use`);
           } else {
             console.error('Health check server error:', error);
           }
+          // Remove listener to avoid memory leaks
+          this.server?.removeListener('error', errorHandler);
           reject(error);
-        });
+        };
+
+        this.server.on('error', errorHandler);
 
         this.server.listen(this.port, this.host, () => {
+          // Remove one-time error handler on successful start
+          this.server?.removeListener('error', errorHandler);
+
           console.error(`Health check server listening on http://${this.host}:${this.port}`);
           console.error(`  - GET /health - Basic health check with uptime`);
           console.error(`  - GET /ready  - Readiness check (K8s readinessProbe)`);
