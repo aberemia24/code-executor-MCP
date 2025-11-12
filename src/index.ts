@@ -23,6 +23,8 @@ import { executePythonInSandbox } from './python-executor.js';
 import { formatErrorResponse } from './utils.js';
 import { ErrorType } from './types.js';
 import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './deno-checker.js';
+import { HealthCheckServer } from './health-check.js';
+import { VERSION } from './version.js';
 import type { MCPExecutionResult } from './types.js';
 
 /**
@@ -35,12 +37,13 @@ class CodeExecutorServer {
   private connectionPool: ConnectionPool;
   private rateLimiter: RateLimiter | null = null;
   private denoAvailable: boolean = false;
+  private healthCheckServer: HealthCheckServer | null = null;
 
   constructor() {
     // Initialize MCP server
     this.server = new McpServer({
       name: 'code-executor-mcp-server',
-      version: '1.0.0',
+      version: VERSION,
     });
 
     // Initialize components
@@ -53,6 +56,9 @@ class CodeExecutorServer {
 
     // Deno availability checked in start()
     this.denoAvailable = false;
+
+    // Health check server will be initialized in start()
+    this.healthCheckServer = null;
 
     // Note: registerTools() is called in start() after config initialization
   }
@@ -518,6 +524,25 @@ Returns:
     const tools = this.mcpClientPool.listAllTools();
     console.error(`Connected to ${tools.length} MCP tools across multiple servers`);
 
+    // Initialize health check server (optional, enabled via env var)
+    const enableHealthCheck = process.env.ENABLE_HEALTH_CHECK !== 'false';
+    if (enableHealthCheck) {
+      console.error('Starting health check server...');
+      this.healthCheckServer = new HealthCheckServer({
+        mcpClientPool: this.mcpClientPool,
+        connectionPool: this.connectionPool,
+        version: VERSION,
+      });
+
+      try {
+        await this.healthCheckServer.start();
+      } catch (error) {
+        console.error('Warning: Failed to start health check server:', error);
+        // Don't fail the entire server if health check fails to start
+        this.healthCheckServer = null;
+      }
+    }
+
     // Start stdio transport
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
@@ -529,6 +554,15 @@ Returns:
    * Shutdown server
    */
   async shutdown(): Promise<void> {
+    // Stop health check server
+    if (this.healthCheckServer) {
+      try {
+        await this.healthCheckServer.stop();
+      } catch (error) {
+        console.error('Error stopping health check server:', error);
+      }
+    }
+
     // Clean up rate limiter
     if (this.rateLimiter) {
       this.rateLimiter.destroy();
