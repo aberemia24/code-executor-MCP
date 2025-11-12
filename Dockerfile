@@ -58,15 +58,17 @@ RUN mkdir -p /app /tmp/code-executor && \
 
 WORKDIR /app
 
-# Copy built artifacts from builder stage
+# Copy package files first (better layer caching - invalidated less frequently)
+COPY --chown=codeexec:codeexec ./package*.json ./
+
+# Install only production dependencies (cached unless package.json changes)
+RUN npm ci --omit=dev
+
+# Copy built artifacts from builder stage (invalidated on every source change)
 COPY --from=builder --chown=codeexec:codeexec /app/dist ./dist
 
-# Copy package files
-COPY --chown=codeexec:codeexec ./package*.json ./
+# Copy configuration files
 COPY --chown=codeexec:codeexec ./.mcp.example.json ./.mcp.json
-
-# Install only production dependencies
-RUN npm ci --omit=dev
 
 # Security: Switch to non-root user
 USER codeexec
