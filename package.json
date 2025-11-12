@@ -4,6 +4,7 @@
   "description": "Universal MCP server for executing TypeScript/Python with progressive disclosure (98% token savings)",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "code-executor-mcp": "./dist/index.js"
   },
