@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-11-12
+
+### Changed
+- 🐳 **Multi-Stage Docker Build** - Eliminated manual pre-build step requirement
+  - Stage 1 (builder): Compile TypeScript with all dependencies inside container
+  - Stage 2 (production): Copy artifacts from builder, install only prod dependencies
+  - Docker build now fully reproducible (no host environment dependencies)
+  - Standard workflow: `git clone → docker build` (no npm run build required)
+- 📖 **Docker Documentation** - Updated README.md installation instructions
+  - Removed manual `npm run build` pre-build step from Docker workflow
+  - Added clear indication that multi-stage build handles compilation automatically
+  - Simplified Docker instructions (3 commands: clone, cd, docker-compose up)
+
+### Fixed
+- 🐛 **Docker Reproducibility** - Build no longer depends on host having TypeScript/dev dependencies
+- 🐛 **CI/CD Workflow** - Eliminated extra manual build step before Docker build
+
+### Benefits
+- **✅ Single Command** - `docker build .` or `docker-compose up -d` (fully reproducible)
+- **📦 Smaller Image** - Builder stage discarded after compilation (~10MB overhead vs dev deps)
+- **🔒 Security Maintained** - All existing security hardening preserved (non-root, resource limits, read-only filesystem)
+- **🚀 CI/CD Friendly** - No manual pre-build step to remember
+- **🎯 Standard Workflow** - Works on fresh systems (git clone → docker build)
+
+### Technical Details
+- **Builder Stage**: node:22-alpine + npm ci (all deps) + TypeScript compilation
+- **Production Stage**: node:22-alpine + artifacts from builder + npm ci --omit=dev
+- **Build Verification**: Added test to ensure dist/index.js exists after compilation
+- **Layer Caching**: Package files copied before source for optimal layer reuse
+- **Security**: Non-root user (codeexec:1001), resource limits, read-only filesystem, Deno/Python sandboxes
+
 ## [0.4.0] - 2025-11-11
 
 ### Added

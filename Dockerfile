@@ -94,6 +94,6 @@ CMD ["sh", "-c", "mkdir -p /tmp/code-executor && exec node dist/index.js"]
 
 # Metadata
 LABEL maintainer="code-executor-mcp" \
-      version="1.3.0" \
+      version="0.4.1" \
       description="Secure code execution sandbox with MCP integration" \
       security.features="non-root,resource-limits,ssrf-protection,network-isolation"

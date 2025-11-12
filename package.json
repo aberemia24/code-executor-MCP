@@ -1,6 +1,6 @@
 {
   "name": "code-executor-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Universal MCP server for executing TypeScript/Python with progressive disclosure (98% token savings)",
   "type": "module",
   "main": "dist/index.js",
