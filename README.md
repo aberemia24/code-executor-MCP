@@ -235,6 +235,11 @@ await callMCPTool('mcp__filesystem__write_file', {...});
 - ✅ Audit logging (all discovery requests logged)
 - ✅ Query validation (max 100 chars, injection prevention)
 
+## Contributor Resources
+
+- [AGENTS.md](AGENTS.md) – concise repository guidelines for day-to-day agent work (structure, commands, style).
+- [CONTRIBUTING.md](CONTRIBUTING.md) – extended onboarding covering environment setup, workflow, and PR requirements.
+
 ## Installation
 
 ```bash
