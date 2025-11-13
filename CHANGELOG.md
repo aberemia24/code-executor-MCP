@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2025-11-13
+
+### Fixed
+- 🐛 **MCP Tool Name Validation** - Allow uppercase letters in server names and hyphens in tool names (#27)
+  - Fixes 40/84 tools (48%) that were previously rejected
+  - Now supports: Linear, Notion, GitHub (uppercase), Context7 (hyphens)
+  - Pattern: `/^mcp__[a-zA-Z0-9_]+__[a-zA-Z0-9_-]+$/`
+- 🐛 **Claude Code Review Workflow** - Fixed authentication errors
+  - Added `github_token` and `anthropic_api_key` parameters
+  - Changed `pull-requests` permission to `write`
+
+### Changed
+- 📋 **Tests** - Updated validation tests for new regex pattern
+  - Added 4 new test cases for uppercase and hyphen support
+  - All 34 tests passing
+
+### Impact
+- **Before:** 44/84 MCP tools usable (52%)
+- **After:** 84/84 MCP tools usable (100%)
+
+### Contributors
+- @nateGeorge - MCP tool name validation fix
+
 ## [0.4.3] - 2025-11-13
 
 ### Added
