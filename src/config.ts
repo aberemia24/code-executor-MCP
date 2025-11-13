@@ -173,6 +173,26 @@ export function isRateLimitEnabled(): boolean {
   return getRateLimitConfig()?.enabled ?? false;
 }
 
+/**
+ * Check if dangerous pattern validation should be skipped
+ *
+ * Can be overridden by:
+ * 1. Environment variable: CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS=true
+ * 2. Configuration file: security.skipDangerousPatternCheck = true
+ *
+ * Default: false (validation enabled for security)
+ */
+export function shouldSkipDangerousPatternCheck(): boolean {
+  // Environment variable takes precedence
+  const envOverride = process.env.CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS;
+  if (envOverride !== undefined) {
+    return envOverride === 'true' || envOverride === '1';
+  }
+
+  // Fall back to config file
+  return getConfig().security?.skipDangerousPatternCheck ?? false;
+}
+
 // For backward compatibility, export commonly used values
 // (will be removed in v2.0)
 export const DEFAULT_TIMEOUT_MS = 30000;

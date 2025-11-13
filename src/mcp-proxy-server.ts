@@ -120,8 +120,20 @@ export class MCPProxyServer {
         }));
       });
 
+      // FIX: Add error handler to prevent Promise from hanging on listen() failures
+      // Root cause: server.listen() callback only fires on success, not on errors
+      // Remove error handler after successful bind to prevent memory leaks
+      const errorHandler = (error: Error) => {
+        reject(normalizeError(error, 'Failed to bind server to port'));
+      };
+
+      this.server.once('error', errorHandler);
+
       // SECURITY: Bind explicitly to 127.0.0.1 (not just 'localhost')
       this.server.listen(0, '127.0.0.1', () => {
+        // Remove error handler after successful bind
+        this.server?.removeListener('error', errorHandler);
+
         if (!this.server) {
           reject(new Error('Server is not initialized'));
           return;
@@ -141,14 +153,29 @@ export class MCPProxyServer {
    * Stop proxy server
    *
    * Closes the HTTP server and releases the port.
+   * FIX: Add timeout to prevent hanging on server.close() waiting for connections
    */
   async stop(): Promise<void> {
     return new Promise((resolve) => {
-      if (this.server) {
-        this.server.close(() => resolve());
-      } else {
+      if (!this.server) {
         resolve();
+        return;
       }
+
+      // Force close after 1 second if graceful close hangs
+      const forceCloseTimeout = setTimeout(() => {
+        console.error('⚠️ HTTP server close timed out, forcing shutdown');
+        resolve();
+      }, 1000);
+
+      this.server.close(() => {
+        clearTimeout(forceCloseTimeout);
+        resolve();
+      });
+
+      // Also destroy all sockets to force immediate closure
+      // This prevents hanging if there are keep-alive connections
+      this.server.closeAllConnections?.();
     });
   }
 

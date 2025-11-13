@@ -160,20 +160,31 @@ export class SecurityValidator {
    * permissions, resource limits, and process isolation.
    *
    * This helps catch accidental misuse and provides audit trail.
+   *
+   * @param code - Code to validate
+   * @param skipDangerousPatternCheck - Skip dangerous pattern validation (optional)
    */
-  validateCode(code: string): CodeValidationResult {
+  validateCode(code: string, skipDangerousPatternCheck = false): CodeValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
 
     // Check for dangerous patterns (defense-in-depth, not security boundary)
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (pattern.test(code)) {
-        // SECURITY: Use generic error message to avoid revealing exact pattern
-        errors.push(
-          `Code contains potentially dangerous pattern. ` +
-          `This pattern is blocked as defense-in-depth protection.`
-        );
+    if (!skipDangerousPatternCheck) {
+      for (const pattern of DANGEROUS_PATTERNS) {
+        if (pattern.test(code)) {
+          // SECURITY: Use generic error message to avoid revealing exact pattern
+          errors.push(
+            `Code contains potentially dangerous pattern. ` +
+            `This pattern is blocked as defense-in-depth protection.`
+          );
+        }
       }
+    } else {
+      // Log warning when validation is skipped
+      warnings.push(
+        `Dangerous pattern validation skipped. ` +
+        `Ensure sandbox permissions are properly configured for security.`
+      );
     }
 
     // Check code length (basic sanity check)

@@ -36,6 +36,10 @@ export const ExecuteTypescriptInputSchema = z.object({
   permissions: SandboxPermissionsSchema
     .default({})
     .describe('Deno sandbox permissions for file system and network access'),
+
+  skipDangerousPatternCheck: z.boolean()
+    .optional()
+    .describe('Skip dangerous pattern validation (defense-in-depth only). Default: false (validation enabled). Can be overridden by CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS env var or config file.'),
 }).strict();
 
 /**
@@ -60,6 +64,10 @@ export const ExecutePythonInputSchema = z.object({
   permissions: SandboxPermissionsSchema
     .default({})
     .describe('Python subprocess permissions (limited filesystem/network access)'),
+
+  skipDangerousPatternCheck: z.boolean()
+    .optional()
+    .describe('Skip dangerous pattern validation (defense-in-depth only). Default: false (validation enabled). Can be overridden by CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS env var or config file.'),
 }).strict();
 
 /**

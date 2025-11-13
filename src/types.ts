@@ -51,6 +51,8 @@ export interface SandboxOptions {
   permissions: SandboxPermissions;
   /** Enable real-time output streaming (WebSocket) */
   streaming?: boolean;
+  /** Skip dangerous pattern validation (defense-in-depth protection) */
+  skipDangerousPatternCheck?: boolean;
 }
 
 /**

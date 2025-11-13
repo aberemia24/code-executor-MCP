@@ -12,7 +12,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { initConfig, isPythonEnabled, isRateLimitEnabled, getRateLimitConfig } from './config.js';
+import { initConfig, isPythonEnabled, isRateLimitEnabled, getRateLimitConfig, shouldSkipDangerousPatternCheck } from './config.js';
 import { ExecuteTypescriptInputSchema, ExecutePythonInputSchema } from './schemas.js';
 import { MCPClientPool } from './mcp-client-pool.js';
 import { SecurityValidator } from './security.js';
@@ -158,6 +158,10 @@ Args:
     - read (string[]): Allowed read paths
     - write (string[]): Allowed write paths
     - net (string[]): Allowed network hosts
+  - skipDangerousPatternCheck (boolean): Skip dangerous pattern validation (optional, default: false)
+    Can be overridden by CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS env var or config file
+    NOTE: Dangerous pattern validation is defense-in-depth only, NOT a security boundary
+    Real security comes from sandbox permissions, resource limits, and process isolation
 
 Returns:
   {
@@ -183,6 +187,7 @@ Example:
             write: z.array(z.string()).optional(),
             net: z.array(z.string()).optional(),
           }).default({}).describe('Deno sandbox permissions'),
+          skipDangerousPatternCheck: z.boolean().optional().describe('Skip dangerous pattern validation (defense-in-depth only)'),
         },
         annotations: {
           readOnlyHint: false,
@@ -220,7 +225,12 @@ Example:
           // Validate security
           this.securityValidator.validateAllowlist(input.allowedTools);
           await this.securityValidator.validatePermissions(input.permissions);
-          const codeValidation = this.securityValidator.validateCode(input.code);
+
+          // Hybrid skip logic:
+          // 1. Execution parameter takes highest priority
+          // 2. Environment variable or config file (via shouldSkipDangerousPatternCheck())
+          const skipPatternCheck = input.skipDangerousPatternCheck ?? shouldSkipDangerousPatternCheck();
+          const codeValidation = this.securityValidator.validateCode(input.code, skipPatternCheck);
 
           if (!codeValidation.valid) {
             return {
@@ -245,6 +255,7 @@ Example:
                 allowedTools: input.allowedTools,
                 timeoutMs: input.timeoutMs,
                 permissions: input.permissions,
+                skipDangerousPatternCheck: skipPatternCheck,
               },
               this.mcpClientPool
             );
@@ -303,6 +314,10 @@ Args:
     Example: ['mcp__zen__codereview', 'mcp__filesystem__read_file']
   - timeoutMs (number): Execution timeout in milliseconds (default: 30000)
   - permissions (object): Subprocess permissions (limited to temp directory and localhost)
+  - skipDangerousPatternCheck (boolean): Skip dangerous pattern validation (optional, default: false)
+    Can be overridden by CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS env var or config file
+    NOTE: Dangerous pattern validation is defense-in-depth only, NOT a security boundary
+    Real security comes from sandbox permissions, resource limits, and process isolation
 
 Returns:
   {
@@ -328,6 +343,7 @@ Example:
               write: z.array(z.string()).optional(),
               net: z.array(z.string()).optional(),
             }).default({}).describe('Subprocess permissions'),
+            skipDangerousPatternCheck: z.boolean().optional().describe('Skip dangerous pattern validation (defense-in-depth only)'),
           },
           annotations: {
             readOnlyHint: false,
@@ -365,7 +381,12 @@ Example:
             // Validate security
             this.securityValidator.validateAllowlist(input.allowedTools);
             await this.securityValidator.validatePermissions(input.permissions);
-            const codeValidation = this.securityValidator.validateCode(input.code);
+
+            // Hybrid skip logic:
+            // 1. Execution parameter takes highest priority
+            // 2. Environment variable or config file (via shouldSkipDangerousPatternCheck())
+            const skipPatternCheck = input.skipDangerousPatternCheck ?? shouldSkipDangerousPatternCheck();
+            const codeValidation = this.securityValidator.validateCode(input.code, skipPatternCheck);
 
             if (!codeValidation.valid) {
               return {
@@ -390,6 +411,7 @@ Example:
                   allowedTools: input.allowedTools,
                   timeoutMs: input.timeoutMs,
                   permissions: input.permissions,
+                  skipDangerousPatternCheck: skipPatternCheck,
                 },
                 this.mcpClientPool
               );

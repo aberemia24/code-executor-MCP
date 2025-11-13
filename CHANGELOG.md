@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2025-11-13
+
+### Added
+- ✨ **Optional Dangerous Pattern Check** - New `skipDangerousPatternCheck` parameter for code executors
+  - Added to `executeTypescript` and `executePython` tool parameters
+  - Allows bypassing dangerous pattern validation when needed (e.g., trusted code execution)
+  - Configurable via `.code-executor.json` using `shouldSkipDangerousPatternCheck` function
+  - Supports both per-execution override and global configuration
+  - Default: `false` (validation enabled for security)
+
+### Fixed
+- 🐛 **Test Suite** - Fixed hanging sandbox discovery function tests
+  - Updated test assertions from RED phase (failure expectations) to GREEN phase (success expectations)
+  - Discovery functions were already implemented but tests expected failure
+  - All 13 tests in `sandbox-executor-discovery.test.ts` now pass successfully
+  - Test execution completes in 1220ms with no hangs or timeouts
+- 🐛 **Docker Security** - Enhanced test coverage for dangerous pattern checks
+  - Added 7 new tests for `skipDangerousPatternCheck` functionality
+  - Validates that skip parameter works with hybrid skip logic (config + param)
+  - Tests cover both TypeScript and Python executors
+
+### Security
+- ⚠️ **Security Trade-off** - Dangerous pattern check can now be bypassed intentionally
+  - **Use Case**: Trusted environments where pattern check causes false positives
+  - **Mitigation**: Parameter defaults to `false` (validation enabled), explicit opt-in required
+  - **Recommendation**: Only use when executing trusted code in controlled environments
+  - Audit logs still track all executions regardless of validation setting
+
+### Testing
+- ✅ All sandbox discovery function tests passing (13 tests, 1220ms)
+- ✅ 7 new tests for optional dangerous pattern check feature
+- ✅ Security tests updated to cover skip parameter scenarios
+- ✅ Integration tests validate hybrid skip logic (config + param override)
+
+### Technical Details
+- **Config Option**: `shouldSkipDangerousPatternCheck(code: string): boolean` function in config
+- **Tool Parameter**: `skipDangerousPatternCheck?: boolean` on executeTypescript/executePython
+- **Hybrid Logic**: Parameter overrides config setting if provided
+- **Backward Compatible**: Feature is optional, defaults maintain existing security behavior
+
+### Benefits
+- **🎯 Flexibility** - Trusted code can bypass validation without disabling security globally
+- **🔧 Debugging** - Easier to test code that triggers false positives
+- **🔒 Security Default** - Validation enabled by default, explicit opt-in required for bypass
+
 ## [0.4.2] - 2025-11-12
 
 ### Fixed

@@ -265,6 +265,63 @@ describe('SecurityValidator', () => {
       // At least globalThis['eval'] should be caught
       expect(result1.valid || result2.valid || result3.valid).toBe(false);
     });
+
+    it('should_skip_dangerous_pattern_check_when_flag_true', () => {
+      const code = 'eval("console.log(1)")';
+      const result = validator.validateCode(code, true);
+
+      // Should be valid when skipping pattern check
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
+      // Should have a warning about skipped validation
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(result.warnings[0]).toContain('Dangerous pattern validation skipped');
+    });
+
+    it('should_validate_dangerous_patterns_when_flag_false', () => {
+      const code = 'eval("console.log(1)")';
+      const result = validator.validateCode(code, false);
+
+      // Should be invalid when not skipping pattern check
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('dangerous pattern');
+    });
+
+    it('should_validate_dangerous_patterns_when_flag_undefined', () => {
+      const code = 'new Function("return 1")()';
+      const result = validator.validateCode(code);
+
+      // Default behavior: validate dangerous patterns
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('dangerous pattern');
+    });
+
+    it('should_allow_multiple_dangerous_patterns_when_skip_true', () => {
+      const code = 'eval("1"); new Function("2"); require("fs");';
+      const result = validator.validateCode(code, true);
+
+      // Should be valid when skipping
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
+      // Should only have skip warning
+      expect(result.warnings.length).toBe(1);
+      expect(result.warnings[0]).toContain('Dangerous pattern validation skipped');
+    });
+
+    it('should_still_warn_for_long_code_when_skip_true', () => {
+      const code = 'eval("x"); ' + 'y'.repeat(150000);
+      const result = validator.validateCode(code, true);
+
+      // Should be valid (no dangerous pattern errors)
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
+      // Should have both skip warning AND long code warning
+      expect(result.warnings.length).toBe(2);
+      expect(result.warnings.some(w => w.includes('Dangerous pattern validation skipped'))).toBe(true);
+      expect(result.warnings.some(w => w.includes('Code is very long'))).toBe(true);
+    });
   });
 
   describe('auditLog', () => {
