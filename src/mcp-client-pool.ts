@@ -14,16 +14,17 @@ import { getMCPConfigPath } from './config.js';
 import { isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
-import type { CachedToolSchema } from './schema-cache.js';
+import type { IToolSchemaProvider, CachedToolSchema } from './types.js';
 import type { ToolSchema } from './types/discovery.js';
 import type { SchemaCache } from './schema-cache.js';
 
 /**
  * MCP Client Pool
  *
- * Manages connections to multiple MCP servers and routes tool calls
+ * Manages connections to multiple MCP servers and routes tool calls.
+ * Implements IToolSchemaProvider to enable Dependency Inversion Principle (DIP).
  */
-export class MCPClientPool {
+export class MCPClientPool implements IToolSchemaProvider {
   private clients: Map<string, Client> = new Map();
   private toolCache: Map<string, ToolInfo> = new Map();
   private processes: Map<string, ProcessInfo> = new Map();

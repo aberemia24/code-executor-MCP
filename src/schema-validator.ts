@@ -6,7 +6,7 @@
  */
 
 import { Ajv } from 'ajv';
-import type { CachedToolSchema } from './schema-cache.js';
+import type { CachedToolSchema } from './types.js';
 
 export interface ValidationResult {
   valid: boolean;
