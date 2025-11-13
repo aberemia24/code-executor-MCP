@@ -4,7 +4,7 @@
 
 import * as crypto from 'crypto';
 import { CHARACTER_LIMIT } from './config.js';
-import type { ErrorResponse, ErrorType } from './types.js';
+import type { ErrorResponse, ErrorType, ExecutionResult } from './types.js';
 
 /**
  * Truncate text to character limit with clear indicator
@@ -79,6 +79,81 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor(ms / 60000);
   const seconds = ((ms % 60000) / 1000).toFixed(0);
   return `${minutes}m ${seconds}s`;
+}
+
+export interface ExecutionResultFormatterOptions {
+  /** Enable ANSI color styling */
+  useColor?: boolean;
+  /** Indentation (number of spaces or string) */
+  indent?: number | string;
+}
+
+/**
+ * Render ExecutionResult objects into a human friendly multi-section string.
+ */
+export function formatExecutionResultForCli(
+  result: ExecutionResult,
+  options: ExecutionResultFormatterOptions = {}
+): string {
+  const useColor = options.useColor ?? false;
+  const indentString =
+    typeof options.indent === 'number'
+      ? ' '.repeat(Math.max(0, options.indent))
+      : options.indent ?? '  ';
+
+  const applyStyle = (text: string, ...codes: string[]) => {
+    if (!useColor || codes.length === 0) {
+      return text;
+    }
+    const prefix = `\u001b[${codes.join(';')}m`;
+    const suffix = '\u001b[0m';
+    return `${prefix}${text}${suffix}`;
+  };
+
+  const status = (() => {
+    if (result.success) {
+      return 'SUCCESS';
+    }
+
+    const errorText = result.error?.toLowerCase() ?? '';
+    if (errorText.includes('timeout')) {
+      return 'TIMEOUT';
+    }
+
+    return 'FAILURE';
+  })();
+
+  const statusColor =
+    status === 'SUCCESS' ? '32' : status === 'FAILURE' ? '31' : '33';
+
+  const sections: string[] = [];
+  sections.push(applyStyle(`Status: ${status}`, '1', statusColor));
+
+  const formatBlock = (title: string, content: string | undefined) => {
+    sections.push(applyStyle(`${title}:`, '1'));
+    const lines = content && content.length > 0 ? content.split(/\r?\n/) : ['(none)'];
+    for (const line of lines) {
+      sections.push(`${indentString}${line}`);
+    }
+  };
+
+  formatBlock('Stdout', result.output);
+  formatBlock('Stderr', result.error);
+
+  sections.push(applyStyle('Duration:', '1'));
+  sections.push(`${indentString}${formatDuration(result.executionTimeMs)}`);
+
+  sections.push(applyStyle('Tool Calls:', '1'));
+  const toolCalls = result.toolCallsMade ?? [];
+  if (toolCalls.length === 0) {
+    sections.push(`${indentString}None`);
+  } else {
+    for (const toolCall of toolCalls) {
+      sections.push(`${indentString}- ${toolCall}`);
+    }
+  }
+
+  return sections.join('\n');
 }
 
 /**
