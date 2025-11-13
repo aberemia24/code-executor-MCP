@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/aberemia24/code-executor-MCP/schemas/api-key",
+  "title": "API Key Validation Schema",
+  "description": "Validates API key format for HTTP transport authentication. Keys must be 32-128 characters, alphanumeric with underscore and hyphen.",
+  "type": "string",
+  "pattern": "^[A-Za-z0-9_-]{32,128}$",
+  "minLength": 32,
+  "maxLength": 128,
+  "examples": [
+    "abc123def456ghi789jkl012mno345pqr678stu",
+    "xyz789_uvw012-rst345_lmn678-opq901_bcd234efg"
+  ],
+  "errorMessage": {
+    "type": "API key must be a string",
+    "pattern": "API key must contain only alphanumeric characters, underscores, and hyphens",
+    "minLength": "API key must be at least 32 characters long",
+    "maxLength": "API key must not exceed 128 characters"
+  }
+}

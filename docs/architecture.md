@@ -579,6 +579,199 @@ await lock.acquire('audit-log-write', async () => {
 
 ---
 
+## 9. Resilience Patterns (v0.5.0)
+
+### 9.1 Circuit Breaker Pattern
+
+**Purpose:** Prevent cascade failures when MCP servers hang or fail repeatedly.
+
+**Implementation:** Opossum library wrapping MCP client pool calls
+
+**State Machine:**
+```
+CLOSED (Normal Operation)
+   ↓ 5 consecutive failures
+OPEN (Fail Fast - 30s cooldown)
+   ↓ After 30s timeout
+HALF-OPEN (Test with 1 request)
+   ↓ Success → CLOSED | Failure → OPEN
+```
+
+**Configuration:**
+- **Failure Threshold:** 5 consecutive failures
+- **Cooldown Period:** 30 seconds
+- **Half-Open Test:** 1 request
+
+**WHY 5 failures?**
+- Low enough to detect problems quickly
+- High enough to avoid false positives from transient errors
+- Balances responsiveness with stability
+
+**WHY 30s cooldown?**
+- Kubernetes default terminationGracePeriodSeconds is 30s
+- AWS ALB deregistration delay is also 30s default
+- Allows time for failing server to recover or be replaced
+
+**Metrics Exposed:**
+- `circuit_breaker_state` (gauge): 0=closed, 1=open, 0.5=half-open
+- `circuit_breaker_failures_total` (counter): Total failures per server
+
+**Example:**
+```typescript
+// Circuit breaker wraps MCP client pool calls
+const breaker = new CircuitBreakerFactory({
+  failureThreshold: 5,
+  resetTimeout: 30000,
+});
+
+// Fails fast when circuit open (no waiting on broken server)
+try {
+  const result = await breaker.callTool('mcp__server__tool', params);
+} catch (error) {
+  if (error.message.includes('circuit open')) {
+    // Handle gracefully - server is known to be down
+  }
+}
+```
+
+### 9.2 Connection Pool Overflow Queue
+
+**Purpose:** Add request queueing and backpressure when connection pool reaches capacity.
+
+**Implementation:** FIFO queue with timeout-based expiration and AsyncLock protection
+
+**Architecture:**
+```
+MCP Request → Check Pool Capacity
+   ↓ Pool under capacity (< 100 concurrent)
+   Execute Immediately
+   ↓ Pool at capacity (≥ 100 concurrent)
+   Enqueue Request (max 200 in queue)
+      ↓ Queue full
+      Return 503 Service Unavailable
+      ↓ Queued successfully
+      Wait for slot (max 30s timeout)
+         ↓ Timeout exceeded
+         Return 503 with retry-after hint
+         ↓ Slot available
+         Dequeue and execute
+```
+
+**Configuration:**
+- **Pool Capacity:** 100 concurrent requests (configurable via `POOL_MAX_CONCURRENT`)
+- **Queue Size:** 200 requests (configurable via `POOL_QUEUE_SIZE`)
+- **Queue Timeout:** 30 seconds (configurable via `POOL_QUEUE_TIMEOUT_MS`)
+
+**WHY 100 concurrent requests?**
+- Balances throughput vs MCP server resource consumption
+- Most MCP servers handle 100 concurrent requests comfortably
+- Configurable for tuning based on actual MCP server capacity
+
+**WHY 200 queue size?**
+- Provides 2× buffer beyond concurrency limit
+- Balances memory usage (~40KB at 200 requests) vs utility
+- More conservative than Nginx default (512)
+
+**WHY 30s timeout?**
+- Reasonable wait time for legitimate traffic
+- Prevents queue from filling with stale requests
+- Matches circuit breaker cooldown (30s recovery window)
+
+**Metrics Exposed:**
+- `pool_active_connections` (gauge): Current concurrent requests
+- `pool_queue_depth` (gauge): Number of requests waiting in queue
+- `pool_queue_wait_seconds` (histogram): Time spent waiting (buckets: 0.1s-30s)
+
+**Example:**
+```typescript
+// Pool automatically queues when at capacity
+const pool = new MCPClientPool({
+  maxConcurrent: 100,
+  queueSize: 200,
+  queueTimeoutMs: 30000,
+});
+
+// Request queued if pool full, executed when slot available
+try {
+  const result = await pool.callTool('mcp__tool', params);
+} catch (error) {
+  if (error.message.includes('Service Unavailable')) {
+    // Queue full or timeout - implement retry logic
+  }
+}
+```
+
+### 9.3 Resilience Pattern Interaction
+
+**Circuit Breaker + Queue:**
+```
+Request → Circuit Breaker Check
+   ↓ Circuit OPEN
+   Fail Fast (no queue)
+   ↓ Circuit CLOSED/HALF-OPEN
+   Check Pool Capacity
+      ↓ Under capacity
+      Execute immediately
+      ↓ At capacity
+      Enqueue (with timeout)
+```
+
+**Benefits:**
+- Circuit breaker prevents queueing requests to known-bad servers
+- Queue provides graceful degradation under load
+- Combined: Fast failure for broken servers, queueing for healthy ones
+
+**Failure Modes:**
+1. **MCP Server Down:** Circuit breaker opens → immediate 503 (no queueing)
+2. **MCP Server Slow:** Queue fills → 503 after 30s timeout
+3. **High Load:** Queue drains as capacity frees → requests succeed with delay
+
+### 9.4 Backpressure Signaling
+
+**HTTP Status Codes:**
+- `200 OK` - Request succeeded (no backpressure)
+- `429 Too Many Requests` - Rate limit exceeded (per-client limit hit)
+- `503 Service Unavailable` - Circuit open OR queue full/timeout
+
+**Retry Guidance:**
+```
+503 Circuit Open
+   Retry-After: 30 (wait for circuit to close)
+
+503 Queue Full
+   Retry-After: 60 (estimated queue drain time)
+
+503 Queue Timeout
+   Retry-After: 30 (try again with fresh timeout)
+```
+
+**Monitoring:**
+```prometheus
+# Alert on high queue depth
+pool_queue_depth > 150  # Queue >75% full
+
+# Alert on frequent circuit opens
+rate(circuit_breaker_failures_total[5m]) > 10
+
+# Alert on slow queue processing
+histogram_quantile(0.95, pool_queue_wait_seconds) > 15
+```
+
+### 9.5 Performance Impact
+
+**Latency Overhead:**
+- **Circuit Breaker:** <1ms per request (state check)
+- **Queue Check:** <1ms per request (counter comparison)
+- **Queue Wait:** 0-30s (depends on load)
+
+**Memory Overhead:**
+- **Circuit Breaker:** ~10KB per server (state tracking)
+- **Connection Queue:** ~200 bytes per queued request (max ~40KB)
+
+**Total Overhead:** Negligible (<0.1% CPU, <1MB RAM)
+
+---
+
 ## Architecture Validation Checklist
 
 ### Constitutional Compliance

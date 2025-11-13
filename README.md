@@ -235,6 +235,11 @@ await callMCPTool('mcp__filesystem__write_file', {...});
 - ✅ Audit logging (all discovery requests logged)
 - ✅ Query validation (max 100 chars, injection prevention)
 
+## Contributor Resources
+
+- [AGENTS.md](AGENTS.md) – concise repository guidelines for day-to-day agent work (structure, commands, style).
+- [CONTRIBUTING.md](CONTRIBUTING.md) – extended onboarding covering environment setup, workflow, and PR requirements.
+
 ## Installation
 
 ```bash
@@ -275,6 +280,66 @@ Add to `.mcp.json`:
 ```
 
 **Then disable all other MCPs. Enable only code-executor.**
+
+## TypeScript Support
+
+**Full TypeScript definitions included** - autocomplete and type checking for all exported APIs.
+
+### Using as a Library
+
+Install as a dependency in your TypeScript project:
+
+```bash
+npm install code-executor-mcp
+```
+
+```typescript
+import { MCPClientPool, SandboxExecutor, SchemaValidator } from 'code-executor-mcp';
+
+// Create and initialize MCP client pool
+const pool = new MCPClientPool();
+await pool.initialize('/path/to/.mcp.json');
+
+// Execute TypeScript code with type safety
+const executor = new SandboxExecutor();
+const result = await executor.executeTypescript({
+  code: `
+    const tools = await discoverMCPTools();
+    console.log('Available tools:', tools.length);
+  `,
+  allowedTools: ['mcp__*'], // Wildcard allowlist
+  timeoutMs: 30000
+});
+
+console.log('Execution output:', result.output);
+```
+
+### Type Definitions
+
+All exported types are available with full IntelliSense support:
+
+```typescript
+import type {
+  MCPClientPoolConfig,
+  ToolSchema,
+  SandboxExecutionResult,
+  ValidationResult
+} from 'code-executor-mcp';
+
+// Configure pool with type safety
+const config: MCPClientPoolConfig = {
+  maxConcurrent: 100,
+  queueSize: 200,
+  queueTimeoutMs: 30000
+};
+
+const pool = new MCPClientPool(config);
+```
+
+**Package exports:**
+- `dist/index.d.ts` - Main type definitions
+- `dist/**/*.d.ts` - All module definitions
+- TypeScript 5.x compatible (strict mode)
 
 ## Advanced Features
 
