@@ -103,15 +103,43 @@ class CodeExecutorServer {
     return null;
   }
 
+  private registerToolWithAliases(
+    name: string,
+    aliases: string[],
+    config: Parameters<McpServer['registerTool']>[1],
+    handler: Parameters<McpServer['registerTool']>[2]
+  ): void {
+    this.server.registerTool(name, config, handler);
+
+    for (const alias of aliases) {
+      const aliasConfig: Parameters<McpServer['registerTool']>[1] = {
+        ...config,
+        _meta: {
+          ...(config._meta ?? {}),
+          aliasFor: name,
+          legacy: true,
+        },
+      };
+
+      if (config.description) {
+        aliasConfig.description = `${config.description}\n\nLegacy alias for ${name}.`;
+      }
+
+      if (config.title) {
+        aliasConfig.title = `${config.title} (Legacy Alias)`;
+      }
+
+      this.server.registerTool(alias, aliasConfig, handler);
+    }
+  }
+
   /**
    * Register MCP tools
    */
   private registerTools(): void {
     // Tool 1: Execute TypeScript (only if Deno is available)
     if (this.denoAvailable) {
-      this.server.registerTool(
-      'executeTypescript',
-      {
+      const typescriptToolConfig: Parameters<McpServer['registerTool']>[1] = {
         title: 'Execute TypeScript with MCP Access',
         description: `Execute TypeScript/JavaScript code in a secure Deno sandbox with access to MCP tools.
 
@@ -195,8 +223,9 @@ Example:
           idempotentHint: false,
           openWorldHint: true,
         },
-      },
-      async (params) => {
+      };
+
+      const typescriptToolHandler: Parameters<McpServer['registerTool']>[2] = async (params) => {
         try {
           // Check rate limit
           const rateLimitError = await this.checkRateLimit();
@@ -287,17 +316,21 @@ Example:
         } catch (error) {
           return this.handleToolError(error, ErrorType.EXECUTION);
         }
-      }
-    );
+      };
+
+      this.registerToolWithAliases(
+        'run-typescript-code',
+        ['executeTypescript'],
+        typescriptToolConfig,
+        typescriptToolHandler
+      );
     }
 
     // Tool 2: Execute Python (optional, enabled via config)
     if (isPythonEnabled()) {
-      this.server.registerTool(
-        'executePython',
-        {
-          title: 'Execute Python with MCP Access',
-          description: `Execute Python code in a subprocess with access to MCP tools.
+      const pythonToolConfig: Parameters<McpServer['registerTool']>[1] = {
+        title: 'Execute Python with MCP Access',
+        description: `Execute Python code in a subprocess with access to MCP tools.
 
 Executed code has access to call_mcp_tool(toolName, params) function for calling other MCP servers.
 
@@ -334,116 +367,123 @@ Example:
     "allowedTools": ["mcp__zen__codereview"],
     "timeoutMs": 60000
   }`,
-          inputSchema: {
-            code: z.string().min(1).describe('Python code to execute'),
-            allowedTools: z.array(z.string()).default([]).describe('MCP tools whitelist'),
-            timeoutMs: z.number().int().min(1000).default(30000).describe('Timeout in milliseconds'),
-            permissions: z.object({
-              read: z.array(z.string()).optional(),
-              write: z.array(z.string()).optional(),
-              net: z.array(z.string()).optional(),
-            }).default({}).describe('Subprocess permissions'),
-            skipDangerousPatternCheck: z.boolean().optional().describe('Skip dangerous pattern validation (defense-in-depth only)'),
-          },
-          annotations: {
-            readOnlyHint: false,
-            destructiveHint: false,
-            idempotentHint: false,
-            openWorldHint: true,
-          },
+        inputSchema: {
+          code: z.string().min(1).describe('Python code to execute'),
+          allowedTools: z.array(z.string()).default([]).describe('MCP tools whitelist'),
+          timeoutMs: z.number().int().min(1000).default(30000).describe('Timeout in milliseconds'),
+          permissions: z.object({
+            read: z.array(z.string()).optional(),
+            write: z.array(z.string()).optional(),
+            net: z.array(z.string()).optional(),
+          }).default({}).describe('Subprocess permissions'),
+          skipDangerousPatternCheck: z.boolean().optional().describe('Skip dangerous pattern validation (defense-in-depth only)'),
         },
-        async (params) => {
-          try {
-            // Check rate limit
-            const rateLimitError = await this.checkRateLimit();
-            if (rateLimitError) {
-              return rateLimitError;
-            }
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      };
 
-            // Validate input with Zod schema
-            const parseResult = ExecutePythonInputSchema.safeParse(params);
-            if (!parseResult.success) {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: JSON.stringify({
-                    success: false,
-                    output: '',
-                    error: `Input validation failed: ${parseResult.error.message}`,
-                    executionTimeMs: 0,
-                  }, null, 2),
-                }],
-                isError: true,
-              };
-            }
-            const input = parseResult.data;
+      const pythonToolHandler: Parameters<McpServer['registerTool']>[2] = async (params) => {
+        try {
+          // Check rate limit
+          const rateLimitError = await this.checkRateLimit();
+          if (rateLimitError) {
+            return rateLimitError;
+          }
 
-            // Validate security
-            this.securityValidator.validateAllowlist(input.allowedTools);
-            await this.securityValidator.validatePermissions(input.permissions);
-
-            // Hybrid skip logic:
-            // 1. Execution parameter takes highest priority
-            // 2. Environment variable or config file (via shouldSkipDangerousPatternCheck())
-            const skipPatternCheck = input.skipDangerousPatternCheck ?? shouldSkipDangerousPatternCheck();
-            const codeValidation = this.securityValidator.validateCode(input.code, skipPatternCheck);
-
-            if (!codeValidation.valid) {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: JSON.stringify({
-                    success: false,
-                    output: '',
-                    error: codeValidation.errors.join('\n'),
-                    executionTimeMs: 0,
-                  }, null, 2),
-                }],
-                isError: true,
-              };
-            }
-
-            // Execute code with connection pooling
-            const result = await this.connectionPool.execute(async () => {
-              return await executePythonInSandbox(
-                {
-                  code: input.code,
-                  allowedTools: input.allowedTools,
-                  timeoutMs: input.timeoutMs,
-                  permissions: input.permissions,
-                  skipDangerousPatternCheck: skipPatternCheck,
-                },
-                this.mcpClientPool
-              );
-            });
-
-            // Audit log
-            await this.securityValidator.auditLog(
-              {
-                executor: 'python',
-                allowedTools: input.allowedTools,
-                toolsCalled: result.toolCallsMade ?? [],
-                executionTimeMs: result.executionTimeMs,
-                success: result.success,
-                error: result.error,
-                clientId: 'default', // MCP servers run locally
-                memoryUsage: process.memoryUsage().heapUsed,
-              },
-              input.code
-            );
-
+          // Validate input with Zod schema
+          const parseResult = ExecutePythonInputSchema.safeParse(params);
+          if (!parseResult.success) {
             return {
               content: [{
                 type: 'text' as const,
-                text: JSON.stringify(result, null, 2),
+                text: JSON.stringify({
+                  success: false,
+                  output: '',
+                  error: `Input validation failed: ${parseResult.error.message}`,
+                  executionTimeMs: 0,
+                }, null, 2),
               }],
-              structuredContent: result as MCPExecutionResult,
-              isError: !result.success,
+              isError: true,
             };
-          } catch (error) {
-            return this.handleToolError(error, ErrorType.EXECUTION);
           }
+          const input = parseResult.data;
+
+          // Validate security
+          this.securityValidator.validateAllowlist(input.allowedTools);
+          await this.securityValidator.validatePermissions(input.permissions);
+
+          // Hybrid skip logic:
+          // 1. Execution parameter takes highest priority
+          // 2. Environment variable or config file (via shouldSkipDangerousPatternCheck())
+          const skipPatternCheck = input.skipDangerousPatternCheck ?? shouldSkipDangerousPatternCheck();
+          const codeValidation = this.securityValidator.validateCode(input.code, skipPatternCheck);
+
+          if (!codeValidation.valid) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  success: false,
+                  output: '',
+                  error: codeValidation.errors.join('\n'),
+                  executionTimeMs: 0,
+                }, null, 2),
+              }],
+              isError: true,
+            };
+          }
+
+          // Execute code with connection pooling
+          const result = await this.connectionPool.execute(async () => {
+            return await executePythonInSandbox(
+              {
+                code: input.code,
+                allowedTools: input.allowedTools,
+                timeoutMs: input.timeoutMs,
+                permissions: input.permissions,
+                skipDangerousPatternCheck: skipPatternCheck,
+              },
+              this.mcpClientPool
+            );
+          });
+
+          // Audit log
+          await this.securityValidator.auditLog(
+            {
+              executor: 'python',
+              allowedTools: input.allowedTools,
+              toolsCalled: result.toolCallsMade ?? [],
+              executionTimeMs: result.executionTimeMs,
+              success: result.success,
+              error: result.error,
+              clientId: 'default', // MCP servers run locally
+              memoryUsage: process.memoryUsage().heapUsed,
+            },
+            input.code
+          );
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify(result, null, 2),
+            }],
+            structuredContent: result as MCPExecutionResult,
+            isError: !result.success,
+          };
+        } catch (error) {
+          return this.handleToolError(error, ErrorType.EXECUTION);
         }
+      };
+
+      this.registerToolWithAliases(
+        'run-python-code',
+        ['executePython'],
+        pythonToolConfig,
+        pythonToolHandler
       );
     }
 

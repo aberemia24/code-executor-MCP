@@ -15,7 +15,7 @@ Industry research confirms: [Agents see "significant drop in tool use accuracy" 
 
 **Disable all MCPs. Enable only code-executor.**
 
-2 tools (`executeTypescript`, `executePython`) access all other MCPs on-demand:
+2 tools (`run-typescript-code`, `run-python-code`) access all other MCPs on-demand (legacy aliases: `executeTypescript`, `executePython`):
 
 ```typescript
 // Claude writes this to access zen MCP
@@ -81,14 +81,18 @@ You provided:
 
 ```typescript
 // Launch browser, navigate, interact, extract data - all in one tool call
-await executeTypescript(`
-  const playwright = await callMCPTool('mcp__playwright__launch', { headless: false });
-  await callMCPTool('mcp__playwright__navigate', { url: 'https://google.com' });
-  const results = await callMCPTool('mcp__playwright__evaluate', {
-    script: 'document.title'
-  });
-  console.log('Page title:', results);
-`, ['mcp__playwright__launch', 'mcp__playwright__navigate', 'mcp__playwright__evaluate']);
+await callMCPTool('mcp__code-executor__run-typescript-code', {
+  code: `
+    const playwright = await callMCPTool('mcp__playwright__launch', { headless: false });
+    await callMCPTool('mcp__playwright__navigate', { url: 'https://google.com' });
+    const results = await callMCPTool('mcp__playwright__evaluate', {
+      script: 'document.title'
+    });
+    console.log('Page title:', results);
+  `,
+  allowedTools: ['mcp__playwright__launch', 'mcp__playwright__navigate', 'mcp__playwright__evaluate']
+});
+// Legacy alias: 'mcp__code-executor__executeTypescript'
 ```
 
 **Why this matters:** Traditional MCP calls require separate executions, losing state between calls. Code-executor maintains state, enabling multi-step automation with branching logic, error handling, and data transformations - all without leaving the sandbox. **Plus:** One tool call = one token cost (~1.6k tokens), regardless of how many MCP actions you orchestrate inside.
@@ -102,7 +106,7 @@ await executeTypescript(`
 ### Quick Start
 
 ```typescript
-// Inside executeTypescript, discover all available tools
+// Inside run-typescript-code, discover all available tools
 const tools = await discoverMCPTools();
 console.log(`Found ${tools.length} tools`);
 
@@ -124,7 +128,7 @@ const result = await callMCPTool('mcp__filesystem__read_file', {
 
 **Discovery functions consume ZERO tokens** - they're hidden from AI agents:
 
-- **Top-level MCP tools** (what Claude sees): `executeTypescript`, `executePython`, `health` (~560 tokens)
+- **Top-level MCP tools** (what Claude sees): `run-typescript-code`, `run-python-code`, `health` (~560 tokens)
 - **Discovery functions** (hidden): `discoverMCPTools`, `getToolSchema`, `searchTools` (0 tokens)
 - **Available only inside sandbox** - injected as `globalThis` functions, not exposed in tool list
 - **Result**: 98% token savings maintained (141k → 1.6k tokens), no regression
@@ -156,7 +160,11 @@ const code = `
   console.log('Review result:', result);
 `;
 
-await executeTypescript(code, ['mcp__zen__codereview']);
+await callMCPTool('mcp__code-executor__run-typescript-code', {
+  code,
+  allowedTools: ['mcp__zen__codereview']
+});
+// Legacy alias: 'mcp__code-executor__executeTypescript'
 ```
 
 ### Function Reference
