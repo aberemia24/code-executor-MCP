@@ -125,14 +125,39 @@ describe('isValidMCPToolName', () => {
     expect(isValidMCPToolName('zen__codereview')).toBe(false); // Missing mcp prefix
   });
 
-  it('should_reject_uppercase_letters', () => {
-    expect(isValidMCPToolName('mcp__Zen__codereview')).toBe(false);
-    expect(isValidMCPToolName('MCP__zen__codereview')).toBe(false);
+  it('should_accept_uppercase_letters_in_server_names', () => {
+    // Uppercase in server names (Linear, Notion)
+    expect(isValidMCPToolName('mcp__Linear__search_documentation')).toBe(true);
+    expect(isValidMCPToolName('mcp__Notion__fetch')).toBe(true);
+    expect(isValidMCPToolName('mcp__Zen__codereview')).toBe(true);
+    expect(isValidMCPToolName('mcp__GitHub__list_issues')).toBe(true);
   });
 
-  it('should_reject_special_characters', () => {
+  it('should_accept_hyphens_in_tool_names', () => {
+    // Hyphens in tool names (Context7)
+    expect(isValidMCPToolName('mcp__context7__resolve-library-id')).toBe(true);
+    expect(isValidMCPToolName('mcp__context7__get-library-docs')).toBe(true);
+    expect(isValidMCPToolName('mcp__zen__code-review')).toBe(true);
+  });
+
+  it('should_reject_hyphens_in_server_names', () => {
+    // Hyphens NOT allowed in server names
     expect(isValidMCPToolName('mcp__zen-test__codereview')).toBe(false);
+    expect(isValidMCPToolName('mcp__my-server__tool')).toBe(false);
+  });
+
+  it('should_reject_unsupported_special_characters', () => {
+    // Dots, spaces, and other special chars still not allowed
     expect(isValidMCPToolName('mcp__zen__code.review')).toBe(false);
+    expect(isValidMCPToolName('mcp__zen__code review')).toBe(false);
+    expect(isValidMCPToolName('mcp__zen@server__tool')).toBe(false);
+  });
+
+  it('should_require_lowercase_mcp_prefix', () => {
+    // MCP prefix must be lowercase (protocol specification)
+    expect(isValidMCPToolName('MCP__zen__codereview')).toBe(false);
+    expect(isValidMCPToolName('Mcp__zen__codereview')).toBe(false);
+    expect(isValidMCPToolName('mcp__zen__codereview')).toBe(true); // Correct
   });
 });
 
