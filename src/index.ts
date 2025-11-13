@@ -169,7 +169,8 @@ Returns:
     "output": string,           // stdout from console.log()
     "error": string,            // Error message if failed
     "executionTimeMs": number,
-    "toolCallsMade": string[]   // MCP tools called
+    "toolCallsMade": string[],  // MCP tools called
+    "toolCallSummary": ToolCallSummaryEntry[] // Aggregated tool call metrics
   }
 
 Example:
@@ -325,7 +326,8 @@ Returns:
     "output": string,           // stdout from print()
     "error": string,            // Error message if failed
     "executionTimeMs": number,
-    "toolCallsMade": string[]   // MCP tools called
+    "toolCallsMade": string[],  // MCP tools called
+    "toolCallSummary": ToolCallSummaryEntry[] // Aggregated tool call metrics
   }
 
 Example:
