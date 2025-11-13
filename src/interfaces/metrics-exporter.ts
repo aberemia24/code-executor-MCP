@@ -68,9 +68,11 @@ export interface IMetricsExporter {
   /**
    * Exports all metrics in Prometheus text format
    *
+   * FIX: Update to async to match prom-client API
+   *
    * @returns Prometheus exposition format (text/plain)
    */
-  exportMetrics(): string;
+  exportMetrics(): Promise<string>;
 
   /**
    * Resets all metrics to initial state
