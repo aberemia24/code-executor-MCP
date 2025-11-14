@@ -10,6 +10,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { initConfig, isPythonEnabled, isRateLimitEnabled, getRateLimitConfig, shouldSkipDangerousPatternCheck } from './config.js';
@@ -249,7 +250,7 @@ Example:
         },
       };
 
-      const typescriptToolHandler: Parameters<McpServer['registerTool']>[2] = async (params) => {
+      const typescriptToolHandler: Parameters<McpServer['registerTool']>[2] = async (args: any, extra: RequestHandlerExtra<any, any>) => {
         try {
           // Check rate limit
           const rateLimitError = await this.checkRateLimit();
@@ -258,7 +259,7 @@ Example:
           }
 
           // Validate input with Zod schema (runtime validation)
-          const parseResult = ExecuteTypescriptInputSchema.safeParse(params);
+          const parseResult = ExecuteTypescriptInputSchema.safeParse(args);
           if (!parseResult.success) {
             return {
               content: [{
@@ -412,7 +413,7 @@ Example:
         },
       };
 
-      const pythonToolHandler: Parameters<McpServer['registerTool']>[2] = async (params) => {
+      const pythonToolHandler: Parameters<McpServer['registerTool']>[2] = async (args: any, extra: RequestHandlerExtra<any, any>) => {
         try {
           // Check rate limit
           const rateLimitError = await this.checkRateLimit();
@@ -421,7 +422,7 @@ Example:
           }
 
           // Validate input with Zod schema
-          const parseResult = ExecutePythonInputSchema.safeParse(params);
+          const parseResult = ExecutePythonInputSchema.safeParse(args);
           if (!parseResult.success) {
             return {
               content: [{
@@ -537,7 +538,7 @@ Returns:
           openWorldHint: false,
         },
       },
-      async () => {
+      async (args: any, extra: RequestHandlerExtra<any, any>) => {
         try {
           const tools = this.mcpClientPool.listAllTools();
           const poolStats = this.connectionPool.getStats();

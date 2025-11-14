@@ -50,7 +50,7 @@
   },
   "homepage": "https://github.com/aberemia24/code-executor-MCP#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.22.0",
     "ajv": "^8.17.1",
     "async-lock": "^1.4.1",
     "lru-cache": "^11.0.2",

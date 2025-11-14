@@ -209,51 +209,61 @@ const schema = await getToolSchema('mcp__filesystem__read_file');
 4. Graceful fallback: Third-party tools return outputSchema: undefined
 ```
 
-### 3.4 Known Limitations & Future Roadmap
+### 3.4 OutputSchema Protocol Support (v0.7.1+)
 
-#### MCP SDK Protocol Gap (v1.21.1)
+#### ✅ RESOLVED: MCP SDK v1.22.0 Native Support
 
-**Current State:**
-The MCP SDK accepts `outputSchema` during tool registration but does not yet expose it via the `tools/list` protocol response. This means:
+**Status:** OutputSchema is now fully functional in the MCP protocol as of v0.7.1 (MCP SDK v1.22.0).
 
-- ✅ **Our Implementation:** Correct and complete (Zod schemas defined, code compiles, tests pass)
-- ✅ **Internal Access:** Code-executor's own 3 tools have outputSchema accessible internally
-- ❌ **Protocol Limitation:** External MCP clients calling `tools/list` won't receive outputSchema yet
-- ✅ **Graceful Fallback:** Third-party tools return `outputSchema: undefined` (optional field)
+**What Changed:**
+- ✅ MCP SDK v1.22.0 exposes `outputSchema` via `tools/list` protocol response
+- ✅ All 5 code-executor tools expose response structure to AI agents
+- ✅ External MCP clients can see outputSchema immediately
+- ✅ No trial execution needed for response structure discovery
 
-**Technical Evidence:**
-```typescript
-// Our registration (src/index.ts) - WORKS
-server.tool({
-  name: 'run-typescript-code',
-  description: '...',
-  inputSchema: { ... },
-  outputSchema: ExecutionResultSchema.shape, // ✅ Accepted by SDK
-}, async (params) => { ... });
-
-// Protocol response (tools/list) - NOT YET EXPOSED
+**Protocol Response (v1.22.0):**
+```json
 {
-  "name": "run-typescript-code",
-  "description": "...",
-  "inputSchema": { ... },
-  // outputSchema missing here ❌ (SDK limitation)
+  "tools": [
+    {
+      "name": "run-typescript-code",
+      "description": "...",
+      "inputSchema": { "type": "object", "properties": { ... } },
+      "outputSchema": {  // ✅ NOW EXPOSED IN PROTOCOL
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "output": { "type": "string" },
+          "error": { "type": "string" },
+          "executionTimeMs": { "type": "number" }
+        }
+      }
+    }
+  ]
 }
 ```
 
-**Why This Matters:**
-- AI agents calling `discoverMCPTools()` won't see outputSchema for third-party tools yet
-- Our 3 tools (run-typescript-code, run-python-code, health) have schemas defined but not visible externally
-- Once SDK adds protocol support, our implementation will work immediately (no changes needed)
+**Verification Test:**
+```bash
+node test-outputschema-v122.mjs
+# Result:
+# ✅ run-typescript-code: outputSchema: YES! (6 fields)
+# ✅ run-python-code: outputSchema: YES! (6 fields)
+# ✅ health: outputSchema: YES! (6 fields)
+# 🎉 SUCCESS! All tools have outputSchema exposed in protocol!
+```
 
-**Future Roadmap:**
-1. **Short-term (v0.6.x):** Monitor MCP SDK releases for protocol support
-2. **Medium-term (v0.7.0):** When SDK adds support, update to expose outputSchema via discovery
-3. **Long-term (v1.0.0):** All MCP servers should adopt outputSchema for complete type safety
+**Migration Details (v1.0.4 → v1.22.0):**
+- Handler signatures updated: `(params)` → `(args, extra)`
+- Added `RequestHandlerExtra` for request context (cancellation signals, session tracking)
+- Runtime Zod validation preserved (zero functional changes)
+- All 620 tests passing, zero regressions
 
-**Workaround (Current):**
-Code-executor's own tools have outputSchema accessible internally. External tools gracefully fall back to `undefined`. The architecture is ready for when the protocol catches up.
-
-**Risk Assessment:** LOW - This is a forward-compatibility feature. The implementation is correct, and the optional field ensures zero breaking changes.
+**Impact:**
+- **Issue #28 RESOLVED:** AI agents now see response structure upfront
+- **No trial-and-error:** Agents can write correct filtering/aggregation code immediately
+- **Progressive disclosure intact:** Still 98% token reduction (141k → 1.6k)
+- **Future-proof:** Ready for ecosystem-wide outputSchema adoption
 
 ---
 

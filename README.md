@@ -90,7 +90,7 @@ Traditional MCP: Expose all 47 tools upfront → 141k tokens
 
 Code Executor: Expose 2 tools (with outputSchema) → tools load on-demand → 1.6k tokens
 
-**NEW in v0.6.0:** All tools now include `outputSchema` - AI agents know response structure without trial execution! *Note: The MCP SDK protocol doesn't expose outputSchema yet (v1.21.1), but our implementation is ready for when it does. See [Architecture docs](docs/architecture.md#35-output-schema-support-new-v060) for details.*
+**NEW in v0.7.1:** All tools now include `outputSchema` exposed via protocol - AI agents know response structure without trial execution! (MCP SDK v1.22.0)
 
 ```
 ┌─────────────────────────────────────┐
