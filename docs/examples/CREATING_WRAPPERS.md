@@ -337,13 +337,14 @@ Most MCP servers document their tools:
 
 ```typescript
 // Use code-executor to inspect available tools
-const tools = await callMCPTool('mcp__code-executor__executeTypescript', {
+const tools = await callMCPTool('mcp__code-executor__run-typescript-code', {
   code: `
     // This runs in sandbox with access to all MCP tools
     console.log('Available tools:', Object.keys(globalThis));
   `,
   allowedTools: []
 });
+// Legacy alias: 'mcp__code-executor__executeTypescript'
 ```
 
 ### Method 3: Trial and Error
