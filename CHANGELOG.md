@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2025-11-14
+
+### Changed
+- 🔧 **Removed Legacy Tool Aliases** - Cleaned up redundant `executeTypescript` and `executePython` aliases
+  - `executeTypescript` → removed (use `run-typescript-code` instead)
+  - `executePython` → removed (use `run-python-code` instead)
+  - Tool count unchanged (3 tools: `run-typescript-code`, `run-python-code`, `health`)
+  - No breaking changes - only removed duplicate aliases introduced in v0.5.1
+
+### Fixed
+- 🐛 **Python Executor Configuration** - Added Python executor to default `.code-executor.json` config
+  - Enables `run-python-code` tool by default
+  - Python path: `/usr/bin/python3` (configurable)
+
+### Technical Details
+- Removed legacy aliases from `registerToolWithAliases()` calls in `src/index.ts`
+- Updated `.code-executor.json` with Python executor configuration
+- Clean 3-tool list: modern naming only (`run-*-code` pattern)
+
 ## [0.5.1] - 2025-11-14
 
 ### Note

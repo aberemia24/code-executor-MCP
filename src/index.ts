@@ -321,7 +321,7 @@ Example:
 
       this.registerToolWithAliases(
         'run-typescript-code',
-        ['executeTypescript'],
+        [], // Removed legacy executeTypescript alias
         typescriptToolConfig,
         typescriptToolHandler
       );
@@ -483,7 +483,7 @@ Example:
 
       this.registerToolWithAliases(
         'run-python-code',
-        ['executePython'],
+        [], // Removed legacy executePython alias
         pythonToolConfig,
         pythonToolHandler
       );
