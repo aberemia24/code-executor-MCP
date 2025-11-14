@@ -40,31 +40,31 @@ import type { AuditLogEntry, CodeValidationResult, SandboxPermissions } from './
  */
 const DANGEROUS_PATTERNS = [
   // JavaScript/TypeScript patterns
-  /\beval\s*\(/gi,                           // eval( with whitespace
-  /\['eval'\]|\["eval"\]/gi,                 // globalThis['eval'] or window['eval']
-  /\bFunction\s*\(/gi,                       // Function( constructor
-  /new\s+Function/gi,                        // new Function
-  /\.constructor\.constructor/gi,            // .constructor.constructor('code')()
-  /\brequire\s*\(/gi,                        // require()
-  /\bimport\s*\(/gi,                         // import() dynamic imports
-  /import\s+.*['"]child_process/gi,          // import ... from 'child_process'
-  /import\s+.*['"]node:child_process/gi,     // import ... from 'node:child_process'
-  /Deno\.(run|Command)/gi,                   // Deno.run | Deno.Command
-  /\bexec(Sync|File)?\s*\(/gi,               // exec, execSync, execFile
-  /setTimeout\s*\(\s*['"`]/gi,               // setTimeout('code')
-  /setInterval\s*\(\s*['"`]/gi,              // setInterval('code')
+  /\beval\s*\(/i,                            // eval( with whitespace
+  /\['eval'\]|\["eval"\]/i,                  // globalThis['eval'] or window['eval']
+  /\bFunction\s*\(/i,                        // Function( constructor
+  /new\s+Function/i,                         // new Function
+  /\.constructor\.constructor/i,             // .constructor.constructor('code')()
+  /\brequire\s*\(/i,                         // require()
+  /\bimport\s*\(/i,                          // import() dynamic imports
+  /import\s+.*['"]child_process/i,           // import ... from 'child_process'
+  /import\s+.*['"]node:child_process/i,      // import ... from 'node:child_process'
+  /Deno\.(run|Command)/i,                    // Deno.run | Deno.Command
+  /\bexec(Sync|File)?\s*\(/i,                // exec, execSync, execFile
+  /setTimeout\s*\(\s*['"`]/i,                // setTimeout('code')
+  /setInterval\s*\(\s*['"`]/i,               // setInterval('code')
 
   // Python patterns
-  /\b__import__\s*\(/gi,                     // __import__() - dynamic imports
-  /\bexec\s*\(/gi,                           // exec() - execute arbitrary code
-  /\bcompile\s*\(/gi,                        // compile() - compile code objects
-  /pickle\.loads/gi,                         // pickle.loads() - deserialization RCE
-  /\bos\.system/gi,                          // os.system() - shell command execution
-  /subprocess\.(run|call|Popen|check_output)/gi, // subprocess - process spawning
-  /\bopen\s*\(.*['"]w/gi,                    // open() in write mode (file system access)
-  /\bglobals\s*\(/gi,                        // globals() - access to global scope
-  /\blocals\s*\(/gi,                         // locals() - access to local scope
-  /\b__builtins__/gi,                        // __builtins__ - access to built-in functions
+  /\b__import__\s*\(/i,                      // __import__() - dynamic imports
+  /\bexec\s*\(/i,                            // exec() - execute arbitrary code
+  /\bcompile\s*\(/i,                         // compile() - compile code objects
+  /pickle\.loads/i,                          // pickle.loads() - deserialization RCE
+  /\bos\.system/i,                           // os.system() - shell command execution
+  /subprocess\.(run|call|Popen|check_output)/i, // subprocess - process spawning
+  /\bopen\s*\(.*['"]w/i,                     // open() in write mode (file system access)
+  /\bglobals\s*\(/i,                         // globals() - access to global scope
+  /\blocals\s*\(/i,                          // locals() - access to local scope
+  /\b__builtins__/i,                         // __builtins__ - access to built-in functions
 ] as const;
 
 /**
