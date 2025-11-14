@@ -80,15 +80,15 @@ describe('ToolCallTracker', () => {
 
   describe('track', () => {
     it('should_track_single_tool_call', () => {
-      tracker.track('mcp__zen__codereview');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
 
       expect(tracker.getCalls()).toEqual(['mcp__zen__codereview']);
     });
 
     it('should_track_multiple_tool_calls_in_order', () => {
-      tracker.track('mcp__zen__codereview');
-      tracker.track('mcp__filesystem__read');
-      tracker.track('mcp__fetcher__fetch');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
+      tracker.track('mcp__filesystem__read', { durationMs: 11, status: 'success' });
+      tracker.track('mcp__fetcher__fetch', { durationMs: 9, status: 'success' });
 
       expect(tracker.getCalls()).toEqual([
         'mcp__zen__codereview',
@@ -98,8 +98,8 @@ describe('ToolCallTracker', () => {
     });
 
     it('should_track_duplicate_calls', () => {
-      tracker.track('mcp__zen__codereview');
-      tracker.track('mcp__zen__codereview');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
+      tracker.track('mcp__zen__codereview', { durationMs: 12, status: 'success' });
 
       expect(tracker.getCalls()).toEqual([
         'mcp__zen__codereview',
@@ -114,7 +114,7 @@ describe('ToolCallTracker', () => {
     });
 
     it('should_return_defensive_copy', () => {
-      tracker.track('mcp__zen__codereview');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
 
       const calls1 = tracker.getCalls();
       const calls2 = tracker.getCalls();
@@ -129,8 +129,8 @@ describe('ToolCallTracker', () => {
 
   describe('clear', () => {
     it('should_clear_all_tracked_calls', () => {
-      tracker.track('mcp__zen__codereview');
-      tracker.track('mcp__filesystem__read');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
+      tracker.track('mcp__filesystem__read', { durationMs: 12, status: 'success' });
 
       tracker.clear();
 
@@ -138,9 +138,9 @@ describe('ToolCallTracker', () => {
     });
 
     it('should_allow_tracking_after_clear', () => {
-      tracker.track('mcp__zen__codereview');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
       tracker.clear();
-      tracker.track('mcp__filesystem__read');
+      tracker.track('mcp__filesystem__read', { durationMs: 12, status: 'success' });
 
       expect(tracker.getCalls()).toEqual(['mcp__filesystem__read']);
     });
@@ -148,11 +148,11 @@ describe('ToolCallTracker', () => {
 
   describe('getUniqueCalls', () => {
     it('should_return_unique_tool_names_only', () => {
-      tracker.track('mcp__zen__codereview');
-      tracker.track('mcp__filesystem__read');
-      tracker.track('mcp__zen__codereview');
-      tracker.track('mcp__fetcher__fetch');
-      tracker.track('mcp__filesystem__read');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
+      tracker.track('mcp__filesystem__read', { durationMs: 12, status: 'success' });
+      tracker.track('mcp__zen__codereview', { durationMs: 14, status: 'success' });
+      tracker.track('mcp__fetcher__fetch', { durationMs: 9, status: 'success' });
+      tracker.track('mcp__filesystem__read', { durationMs: 11, status: 'success' });
 
       const unique = tracker.getUniqueCalls();
 
@@ -167,7 +167,7 @@ describe('ToolCallTracker', () => {
     });
 
     it('should_return_defensive_copy', () => {
-      tracker.track('mcp__zen__codereview');
+      tracker.track('mcp__zen__codereview', { durationMs: 10, status: 'success' });
 
       const unique1 = tracker.getUniqueCalls();
       unique1.push('mcp__evil__mutation');

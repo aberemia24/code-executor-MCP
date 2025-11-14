@@ -14,6 +14,7 @@ import { SchemaValidator } from './schema-validator.js';
 import { RateLimiter } from './rate-limiter.js';
 import { MetricsExporter } from './metrics-exporter.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
+import type { ToolCallSummaryEntry } from './types.js';
 
 // Configuration constants
 const MAX_SEARCH_QUERY_LENGTH = 100; // Maximum characters allowed in search query
@@ -217,6 +218,13 @@ export class MCPProxyServer {
     return this.tracker.getCalls();
   }
 
+  /**
+   * Get aggregated summary of tool invocations
+   */
+  getToolCallSummary(): ToolCallSummaryEntry[] {
+    return this.tracker.getSummary();
+  }
+
 
   /**
    * Validate bearer token using constant-time comparison
@@ -342,20 +350,49 @@ export class MCPProxyServer {
         }
       }
 
-      // Track tool call
-      this.tracker.track(toolName);
+      const start = process.hrtime.bigint();
+      try {
+        // Call MCP tool through pool
+        const result = await this.mcpClientPool.callTool(toolName, params);
 
-      // Call MCP tool through pool
-      const result = await this.mcpClientPool.callTool(toolName, params);
+        const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+        this.tracker.track(toolName, {
+          durationMs,
+          status: 'success',
+        });
 
-      // Record successful request metrics
-      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-      this.metricsExporter.recordHttpRequest('POST', 200);
-      this.metricsExporter.recordHttpDuration('POST', '/', duration);
+        // Record successful request metrics
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('POST', 200);
+        this.metricsExporter.recordHttpDuration('POST', '/', duration);
 
-      // Return result
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ result }));
+        // Return result
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ result }));
+        return;
+      } catch (toolError) {
+        const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+        const normalized = normalizeError(toolError, 'MCP tool call failed');
+
+        this.tracker.track(toolName, {
+          durationMs,
+          status: 'error',
+          errorMessage: normalized.message,
+        });
+
+        // Record error request metrics
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('POST', 500);
+        this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
+        res.writeHead(500);
+        res.end(
+          JSON.stringify({
+            error: normalized.message,
+          })
+        );
+        return;
+      }
     } catch (error) {
       const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
       this.metricsExporter.recordHttpRequest('POST', 500);

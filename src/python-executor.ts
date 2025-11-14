@@ -193,6 +193,7 @@ export async function executePythonInSandbox(
               output: truncateOutput(sanitizeOutput(stdout)),
               executionTimeMs,
               toolCallsMade: proxyServer.getToolCalls(),
+              toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
             });
           } else {
@@ -207,6 +208,7 @@ export async function executePythonInSandbox(
               error: sanitizeOutput(stderr) || `Process exited with code ${code}`,
               executionTimeMs,
               toolCallsMade: proxyServer.getToolCalls(),
+              toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
             });
           }
@@ -228,6 +230,7 @@ export async function executePythonInSandbox(
             error: `Execution timeout after ${formatDuration(options.timeoutMs)}`,
             executionTimeMs: Date.now() - startTime,
             toolCallsMade: proxyServer.getToolCalls(),
+            toolCallSummary: proxyServer.getToolCallSummary(),
             streamUrl,
           });
         }, options.timeoutMs);

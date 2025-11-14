@@ -339,6 +339,7 @@ await import('file://${userCodeFile}');
               output: truncateOutput(sanitizeOutput(stdout)),
               executionTimeMs,
               toolCallsMade: proxyServer.getToolCalls(),
+              toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
             });
           } else {
@@ -353,6 +354,7 @@ await import('file://${userCodeFile}');
               error: sanitizeOutput(stderr) || `Process exited with code ${code}`,
               executionTimeMs,
               toolCallsMade: proxyServer.getToolCalls(),
+              toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
             });
           }
@@ -376,6 +378,7 @@ await import('file://${userCodeFile}');
             ).message,
             executionTimeMs: Date.now() - startTime,
             toolCallsMade: [],
+            toolCallSummary: [],
             streamUrl,
           });
         });
@@ -396,6 +399,7 @@ await import('file://${userCodeFile}');
             error: `Execution timeout after ${formatDuration(options.timeoutMs)}`,
             executionTimeMs: Date.now() - startTime,
             toolCallsMade: proxyServer.getToolCalls(),
+            toolCallSummary: proxyServer.getToolCallSummary(),
             streamUrl,
           });
         }, options.timeoutMs);
