@@ -252,3 +252,135 @@ describe('Discovery Function Timeout Fix (US6)', () => {
     expect(result.output).toMatch(/searchTools completed in \d+ms/);
   });
 });
+
+describe('Temp File Integrity Checks (P0 Security)', () => {
+  let mockMCPClientPool: MCPClientPool;
+
+  beforeAll(async () => {
+    await initConfig({});
+  });
+
+  beforeEach(() => {
+    mockMCPClientPool = {
+      listAllTools: vi.fn().mockReturnValue([]),
+      listAllToolSchemas: vi.fn().mockResolvedValue([]),
+      callTool: vi.fn()
+    } as unknown as MCPClientPool;
+  });
+
+  it('should_pass_integrity_check_with_LF_line_endings', async () => {
+    const code = 'const test = "hello";\nconsole.log(test);';
+
+    const options: SandboxOptions = {
+      code,
+      allowedTools: [],
+      timeoutMs: 5000,
+      permissions: { read: [], write: [], net: [] }
+    };
+
+    const result = await executeTypescriptInSandbox(options, mockMCPClientPool);
+
+    // Should succeed (no integrity check failure)
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('hello');
+  });
+
+  it('should_pass_integrity_check_with_CRLF_line_endings', async () => {
+    // Windows-style CRLF line endings
+    const code = 'const test = "hello";\r\nconsole.log(test);';
+
+    const options: SandboxOptions = {
+      code,
+      allowedTools: [],
+      timeoutMs: 5000,
+      permissions: { read: [], write: [], net: [] }
+    };
+
+    const result = await executeTypescriptInSandbox(options, mockMCPClientPool);
+
+    // Should succeed (normalization handles CRLF → LF)
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('hello');
+  });
+
+  it('should_pass_integrity_check_with_CR_line_endings', async () => {
+    // Old Mac-style CR line endings
+    const code = 'const test = "hello";\rconsole.log(test);';
+
+    const options: SandboxOptions = {
+      code,
+      allowedTools: [],
+      timeoutMs: 5000,
+      permissions: { read: [], write: [], net: [] }
+    };
+
+    const result = await executeTypescriptInSandbox(options, mockMCPClientPool);
+
+    // Should succeed (normalization handles CR → LF)
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('hello');
+  });
+
+  it('should_pass_integrity_check_with_mixed_line_endings', async () => {
+    // Mixed line endings (CRLF + LF + CR)
+    const code = 'const a = 1;\r\nconst b = 2;\nconst c = 3;\rconsole.log(a, b, c);';
+
+    const options: SandboxOptions = {
+      code,
+      allowedTools: [],
+      timeoutMs: 5000,
+      permissions: { read: [], write: [], net: [] }
+    };
+
+    const result = await executeTypescriptInSandbox(options, mockMCPClientPool);
+
+    // Should succeed (normalization handles all line ending types)
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('1 2 3');
+  });
+
+  it('should_handle_multiline_code_with_CRLF', async () => {
+    // Realistic multi-line code with CRLF
+    const code = [
+      'const data = {',
+      '  name: "test",',
+      '  value: 123',
+      '};',
+      'console.log(JSON.stringify(data));'
+    ].join('\r\n');
+
+    const options: SandboxOptions = {
+      code,
+      allowedTools: [],
+      timeoutMs: 5000,
+      permissions: { read: [], write: [], net: [] }
+    };
+
+    const result = await executeTypescriptInSandbox(options, mockMCPClientPool);
+
+    // Should succeed and produce correct output
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('"name":"test"');
+    expect(result.output).toContain('"value":123');
+  });
+
+  it('should_preserve_line_endings_in_string_literals', async () => {
+    // Ensure normalization only affects actual line breaks, not strings
+    const code = 'const str = "line1\\r\\nline2\\nline3";\nconsole.log(str);';
+
+    const options: SandboxOptions = {
+      code,
+      allowedTools: [],
+      timeoutMs: 5000,
+      permissions: { read: [], write: [], net: [] }
+    };
+
+    const result = await executeTypescriptInSandbox(options, mockMCPClientPool);
+
+    // Should succeed and preserve escape sequences in strings
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('line1');
+    expect(result.output).toContain('line2');
+    expect(result.output).toContain('line3');
+  });
+});
