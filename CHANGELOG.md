@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- ✨ **TypeScript Definitions Export (US12)** - Package now exports .d.ts files for type-safe imports
+  - `tsconfig.json`: `declaration: true`, `declarationMap: true` enabled
+  - `package.json`: `"types": "dist/index.d.ts"` field added
+  - Enables type-safe imports: `import { RedisCacheProvider } from 'code-executor-mcp'`
+  - All public APIs have complete TypeScript definitions
+  - README.md updated with TypeScript usage examples
+
+- ✨ **Improved AJV Validation Errors (US13)** - User-friendly error messages with actionable suggestions
+  - `AjvErrorFormatter` class transforms verbose AJV errors into readable guidance
+  - Includes field name, expected type, actual value, and "Try this..." suggestions
+  - Example: "Expected string for param 'model', got number 42. Try wrapping in quotes: '42'"
+  - Integrated into `SchemaValidator.validate()` via `formattedError` property
+  - Backwards compatible (raw AJV errors still included in response)
+
+- ✨ **Redis Distributed Cache (US14)** - Horizontal scaling support for multi-instance deployments
+  - `RedisCacheProvider` implements `ICacheProvider` for distributed caching
+  - Write-through LRU cache for fast reads (zero network latency)
+  - Graceful fallback to LRU on Redis connection failure (eventual consistency model)
+  - Periodic reconnection attempts (60s interval default, configurable via `REDIS_RECONNECT_INTERVAL_MS`)
+  - Automatic switchback to Redis after successful reconnection
+  - Docker Compose Redis service added (256MB memory limit, LRU eviction policy)
+  - Configuration via `CACHE_BACKEND` env var (redis|lru) and `REDIS_URL`
+
+### Changed
+- 📦 **Dependencies** - Added `redis@^4.7.1` for distributed caching support
+- 📖 **Docker Compose** - Redis service added with security hardening (resource limits, read-only filesystem, health checks)
+
+### Testing
+- ✅ 14 new tests for Phase 7 features (451 total tests passing)
+- ✅ AjvErrorFormatter: 9 tests, 100% coverage on error formatting logic
+- ✅ RedisCacheProvider: 14 tests, 90% coverage on LRU fallback path
+- ✅ All Phase 7 tests passing with zero failures
+
+### Technical Details
+- **TypeScript Definitions**: Full .d.ts generation for all public APIs (tsconfig.json declaration mode)
+- **Error Formatting**: AJV error transformation with field-level suggestions and examples
+- **Redis Integration**: Fire-and-forget async writes, write-through LRU cache, periodic reconnection
+- **Fallback Strategy**: LRU cache serves as both performance optimization and resilience mechanism
+- **TTL Consistency**: Redis TTL matches LRU cache (24h default) for consistent behavior
+
+### Benefits
+- **🎯 Type Safety** - Consumers get IntelliSense and compile-time validation
+- **📋 Better DX** - User-friendly error messages reduce debugging time
+- **🚀 Horizontal Scaling** - Multiple server instances can share Redis cache
+- **🔒 Resilience** - Graceful degradation to LRU when Redis unavailable
+- **⚡ Zero Read Latency** - Write-through cache eliminates network calls on reads
+
 ## [0.4.4] - 2025-11-13
 
 ### Fixed

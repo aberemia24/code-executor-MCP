@@ -3,6 +3,37 @@
  */
 
 /**
+ * Tool call status types used across execution metadata
+ */
+export type ToolCallStatus = 'success' | 'error';
+
+/**
+ * Aggregated summary information for tool invocations during execution
+ */
+export interface ToolCallSummaryEntry {
+  /** MCP tool name */
+  toolName: string;
+  /** Total number of invocations */
+  callCount: number;
+  /** Number of successful invocations */
+  successCount: number;
+  /** Number of failed invocations */
+  errorCount: number;
+  /** Total execution time accumulated across calls (ms) */
+  totalDurationMs: number;
+  /** Average execution time per call (ms) */
+  averageDurationMs: number;
+  /** Duration of the most recent call (ms) */
+  lastCallDurationMs?: number;
+  /** Status of the most recent call */
+  lastCallStatus?: ToolCallStatus;
+  /** Error message from the most recent failure (if any) */
+  lastErrorMessage?: string;
+  /** ISO timestamp for the most recent call */
+  lastCalledAt?: string;
+}
+
+/**
  * Code execution result
  */
 export interface ExecutionResult {
@@ -16,6 +47,8 @@ export interface ExecutionResult {
   executionTimeMs: number;
   /** MCP tools called during execution */
   toolCallsMade?: string[];
+  /** Aggregated metadata for each MCP tool invocation */
+  toolCallSummary?: ToolCallSummaryEntry[];
   /** WebSocket URL for streaming output (optional) */
   streamUrl?: string;
 }
@@ -132,6 +165,46 @@ export interface ToolInfo {
   name: string;
   /** Tool description */
   description: string;
+}
+
+/**
+ * Tool schema provider abstraction
+ *
+ * Enables Dependency Inversion Principle (DIP) by allowing high-level modules
+ * (like SchemaCache) to depend on this abstraction instead of concrete implementations
+ * (like MCPClientPool). This improves testability and allows swapping implementations.
+ */
+export interface IToolSchemaProvider {
+  /**
+   * List all available tools from connected MCP servers
+   *
+   * @returns Array of tool information (server, name, description)
+   */
+  listAllTools(): ToolInfo[];
+
+  /**
+   * Get full schema for a specific tool
+   *
+   * @param toolName - Full MCP tool name (e.g., 'mcp__zen__codereview')
+   * @returns Tool schema with inputSchema, or null if not found
+   */
+  getToolSchema(toolName: string): Promise<CachedToolSchema | null>;
+}
+
+/**
+ * Cached tool schema (used by SchemaCache and IToolSchemaProvider)
+ */
+export interface CachedToolSchema {
+  name: string;
+  description?: string;
+  inputSchema: {
+    type?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    properties?: Record<string, any>;
+    required?: string[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
+  };
 }
 
 /**

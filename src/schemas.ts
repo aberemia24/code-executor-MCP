@@ -73,12 +73,44 @@ export const ExecutePythonInputSchema = z.object({
 /**
  * Execution result schema
  */
+const ToolCallSummaryEntrySchema = z
+  .object({
+    toolName: z.string().describe('Name of the MCP tool'),
+    callCount: z.number().int().nonnegative().describe('Total number of invocations'),
+    successCount: z.number().int().nonnegative().describe('Successful invocations'),
+    errorCount: z.number().int().nonnegative().describe('Failed invocations'),
+    totalDurationMs: z.number().nonnegative().describe('Total execution time in milliseconds'),
+    averageDurationMs: z.number().nonnegative().describe('Average execution time per call in milliseconds'),
+    lastCallDurationMs: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe('Duration of the most recent call in milliseconds'),
+    lastCallStatus: z
+      .enum(['success', 'error'])
+      .optional()
+      .describe('Status of the most recent call'),
+    lastErrorMessage: z
+      .string()
+      .optional()
+      .describe('Error message from the most recent failure (if any)'),
+    lastCalledAt: z
+      .string()
+      .optional()
+      .describe('ISO timestamp of the most recent call'),
+  })
+  .describe('Aggregated execution metrics for a specific MCP tool');
+
 export const ExecutionResultSchema = z.object({
   success: z.boolean().describe('Whether execution succeeded'),
   output: z.string().describe('Output from stdout (console.log or print)'),
   error: z.string().optional().describe('Error message if execution failed'),
   executionTimeMs: z.number().describe('Execution time in milliseconds'),
   toolCallsMade: z.array(z.string()).optional().describe('List of MCP tools called during execution'),
+  toolCallSummary: z
+    .array(ToolCallSummaryEntrySchema)
+    .optional()
+    .describe('Aggregated tool call metrics collected during execution'),
 });
 
 /** Infer TypeScript types from Zod schemas */

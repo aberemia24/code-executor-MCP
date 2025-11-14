@@ -114,7 +114,7 @@ export function getDenoInstallMessage(): string {
   return `
 ⚠️  Deno not found - TypeScript execution disabled
 
-To enable TypeScript execution (executeTypescript tool):
+To enable TypeScript execution (run-typescript-code tool, legacy alias: executeTypescript):
 
 1. Install Deno:
    curl -fsSL https://deno.land/install.sh | sh
@@ -122,7 +122,7 @@ To enable TypeScript execution (executeTypescript tool):
 2. Or use Docker deployment (Deno included):
    docker-compose up -d
 
-Python execution (executePython) is still available.
+Python execution (run-python-code / executePython alias) is still available.
 
 For more info: https://deno.land/manual/getting_started/installation
 `.trim();

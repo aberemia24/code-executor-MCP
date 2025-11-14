@@ -15,7 +15,7 @@ Industry research confirms: [Agents see "significant drop in tool use accuracy" 
 
 **Disable all MCPs. Enable only code-executor.**
 
-2 tools (`executeTypescript`, `executePython`) access all other MCPs on-demand:
+2 tools (`run-typescript-code`, `run-python-code`) access all other MCPs on-demand (legacy aliases: `executeTypescript`, `executePython`):
 
 ```typescript
 // Claude writes this to access zen MCP
@@ -81,14 +81,18 @@ You provided:
 
 ```typescript
 // Launch browser, navigate, interact, extract data - all in one tool call
-await executeTypescript(`
-  const playwright = await callMCPTool('mcp__playwright__launch', { headless: false });
-  await callMCPTool('mcp__playwright__navigate', { url: 'https://google.com' });
-  const results = await callMCPTool('mcp__playwright__evaluate', {
-    script: 'document.title'
-  });
-  console.log('Page title:', results);
-`, ['mcp__playwright__launch', 'mcp__playwright__navigate', 'mcp__playwright__evaluate']);
+await callMCPTool('mcp__code-executor__run-typescript-code', {
+  code: `
+    const playwright = await callMCPTool('mcp__playwright__launch', { headless: false });
+    await callMCPTool('mcp__playwright__navigate', { url: 'https://google.com' });
+    const results = await callMCPTool('mcp__playwright__evaluate', {
+      script: 'document.title'
+    });
+    console.log('Page title:', results);
+  `,
+  allowedTools: ['mcp__playwright__launch', 'mcp__playwright__navigate', 'mcp__playwright__evaluate']
+});
+// Legacy alias: 'mcp__code-executor__executeTypescript'
 ```
 
 **Why this matters:** Traditional MCP calls require separate executions, losing state between calls. Code-executor maintains state, enabling multi-step automation with branching logic, error handling, and data transformations - all without leaving the sandbox. **Plus:** One tool call = one token cost (~1.6k tokens), regardless of how many MCP actions you orchestrate inside.
@@ -102,7 +106,7 @@ await executeTypescript(`
 ### Quick Start
 
 ```typescript
-// Inside executeTypescript, discover all available tools
+// Inside run-typescript-code, discover all available tools
 const tools = await discoverMCPTools();
 console.log(`Found ${tools.length} tools`);
 
@@ -124,7 +128,7 @@ const result = await callMCPTool('mcp__filesystem__read_file', {
 
 **Discovery functions consume ZERO tokens** - they're hidden from AI agents:
 
-- **Top-level MCP tools** (what Claude sees): `executeTypescript`, `executePython`, `health` (~560 tokens)
+- **Top-level MCP tools** (what Claude sees): `run-typescript-code`, `run-python-code`, `health` (~560 tokens)
 - **Discovery functions** (hidden): `discoverMCPTools`, `getToolSchema`, `searchTools` (0 tokens)
 - **Available only inside sandbox** - injected as `globalThis` functions, not exposed in tool list
 - **Result**: 98% token savings maintained (141k → 1.6k tokens), no regression
@@ -156,7 +160,11 @@ const code = `
   console.log('Review result:', result);
 `;
 
-await executeTypescript(code, ['mcp__zen__codereview']);
+await callMCPTool('mcp__code-executor__run-typescript-code', {
+  code,
+  allowedTools: ['mcp__zen__codereview']
+});
+// Legacy alias: 'mcp__code-executor__executeTypescript'
 ```
 
 ### Function Reference
@@ -235,6 +243,11 @@ await callMCPTool('mcp__filesystem__write_file', {...});
 - ✅ Audit logging (all discovery requests logged)
 - ✅ Query validation (max 100 chars, injection prevention)
 
+## Contributor Resources
+
+- [AGENTS.md](AGENTS.md) – concise repository guidelines for day-to-day agent work (structure, commands, style).
+- [CONTRIBUTING.md](CONTRIBUTING.md) – extended onboarding covering environment setup, workflow, and PR requirements.
+
 ## Installation
 
 ```bash
@@ -275,6 +288,66 @@ Add to `.mcp.json`:
 ```
 
 **Then disable all other MCPs. Enable only code-executor.**
+
+## TypeScript Support
+
+**Full TypeScript definitions included** - autocomplete and type checking for all exported APIs.
+
+### Using as a Library
+
+Install as a dependency in your TypeScript project:
+
+```bash
+npm install code-executor-mcp
+```
+
+```typescript
+import { MCPClientPool, SandboxExecutor, SchemaValidator } from 'code-executor-mcp';
+
+// Create and initialize MCP client pool
+const pool = new MCPClientPool();
+await pool.initialize('/path/to/.mcp.json');
+
+// Execute TypeScript code with type safety
+const executor = new SandboxExecutor();
+const result = await executor.executeTypescript({
+  code: `
+    const tools = await discoverMCPTools();
+    console.log('Available tools:', tools.length);
+  `,
+  allowedTools: ['mcp__*'], // Wildcard allowlist
+  timeoutMs: 30000
+});
+
+console.log('Execution output:', result.output);
+```
+
+### Type Definitions
+
+All exported types are available with full IntelliSense support:
+
+```typescript
+import type {
+  MCPClientPoolConfig,
+  ToolSchema,
+  SandboxExecutionResult,
+  ValidationResult
+} from 'code-executor-mcp';
+
+// Configure pool with type safety
+const config: MCPClientPoolConfig = {
+  maxConcurrent: 100,
+  queueSize: 200,
+  queueTimeoutMs: 30000
+};
+
+const pool = new MCPClientPool(config);
+```
+
+**Package exports:**
+- `dist/index.d.ts` - Main type definitions
+- `dist/**/*.d.ts` - All module definitions
+- TypeScript 5.x compatible (strict mode)
 
 ## Advanced Features
 

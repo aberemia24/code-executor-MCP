@@ -161,6 +161,7 @@ globalThis.discoverMCPTools = async (options?: { search?: string[] }): Promise<T
       },
       // PERFORMANCE (Constitutional Principle 8): Timeout prevents hanging
       // Meets NFR-2 requirement (<100ms P95 latency for normal case)
+      // T067: Fix interpolation - ${DISCOVERY_TIMEOUT_MS} resolves to numeric value
       signal: AbortSignal.timeout(${DISCOVERY_TIMEOUT_MS})
     });
 
@@ -186,8 +187,9 @@ globalThis.discoverMCPTools = async (options?: { search?: string[] }): Promise<T
     const normalizedError = error instanceof Error ? error : new Error(String(error));
 
     // Handle timeout errors with clear message
+    // T067: Fix interpolation - ${DISCOVERY_TIMEOUT_MS} resolves to numeric value in error message
     if (normalizedError.name === 'AbortError' || normalizedError.name === 'TimeoutError') {
-      throw new Error('MCP tool discovery timed out after ${DISCOVERY_TIMEOUT_MS}ms');
+      throw new Error(\`MCP tool discovery timed out after ${DISCOVERY_TIMEOUT_MS}ms\`);
     }
 
     // Re-throw normalized error
@@ -337,6 +339,7 @@ await import('file://${userCodeFile}');
               output: truncateOutput(sanitizeOutput(stdout)),
               executionTimeMs,
               toolCallsMade: proxyServer.getToolCalls(),
+              toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
             });
           } else {
@@ -351,6 +354,7 @@ await import('file://${userCodeFile}');
               error: sanitizeOutput(stderr) || `Process exited with code ${code}`,
               executionTimeMs,
               toolCallsMade: proxyServer.getToolCalls(),
+              toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
             });
           }
@@ -374,6 +378,7 @@ await import('file://${userCodeFile}');
             ).message,
             executionTimeMs: Date.now() - startTime,
             toolCallsMade: [],
+            toolCallSummary: [],
             streamUrl,
           });
         });
@@ -394,6 +399,7 @@ await import('file://${userCodeFile}');
             error: `Execution timeout after ${formatDuration(options.timeoutMs)}`,
             executionTimeMs: Date.now() - startTime,
             toolCallsMade: proxyServer.getToolCalls(),
+            toolCallSummary: proxyServer.getToolCallSummary(),
             streamUrl,
           });
         }, options.timeoutMs);

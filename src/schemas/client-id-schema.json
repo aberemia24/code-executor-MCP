@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/aberemia24/code-executor-MCP/schemas/client-id",
+  "title": "Client ID Validation Schema",
+  "description": "Validates client identifier format. Client IDs are associated with API keys for rate limiting and audit logging.",
+  "type": "string",
+  "pattern": "^[a-zA-Z0-9_-]+$",
+  "minLength": 1,
+  "maxLength": 64,
+  "examples": [
+    "client_1",
+    "production-service",
+    "test_client_123"
+  ],
+  "errorMessage": {
+    "type": "Client ID must be a string",
+    "pattern": "Client ID must contain only alphanumeric characters, underscores, and hyphens",
+    "minLength": "Client ID must not be empty",
+    "maxLength": "Client ID must not exceed 64 characters"
+  }
+}

@@ -14,20 +14,82 @@ import { getMCPConfigPath } from './config.js';
 import { isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
-import type { CachedToolSchema } from './schema-cache.js';
+import type { IToolSchemaProvider, CachedToolSchema } from './types.js';
 import type { ToolSchema } from './types/discovery.js';
 import type { SchemaCache } from './schema-cache.js';
+import { ConnectionQueue } from './connection-queue.js';
+import type { MetricsExporter } from './metrics-exporter.js';
 
 /**
- * MCP Client Pool
+ * MCP Client Pool Configuration (US4: FR-4)
  *
- * Manages connections to multiple MCP servers and routes tool calls
+ * **WHY Concurrency Limiting?**
+ * - Prevents overwhelming MCP servers with too many simultaneous requests
+ * - Provides graceful degradation under load (queue vs fail immediately)
+ * - Enables backpressure signaling to upstream callers
+ *
+ * **WHY 100 concurrent requests default?**
+ * - Balances throughput vs MCP server resource consumption
+ * - Most MCP servers handle 100 concurrent requests comfortably
+ * - Configurable via POOL_MAX_CONCURRENT env var for tuning
+ *
+ * **WHY 200 queue size default?**
+ * - See connection-queue.ts for queue size rationale
+ * - Provides 2x buffer beyond concurrency limit
+ * - Configurable via POOL_QUEUE_SIZE env var
  */
-export class MCPClientPool {
+export interface MCPClientPoolConfig {
+  /** Maximum concurrent requests (default: 100) */
+  maxConcurrent?: number;
+  /** Queue size when pool at capacity (default: 200) */
+  queueSize?: number;
+  /** Queue timeout in milliseconds (default: 30000ms = 30s) */
+  queueTimeoutMs?: number;
+}
+
+/**
+ * MCP Client Pool (US4: FR-4 Integration)
+ *
+ * Manages connections to multiple MCP servers and routes tool calls.
+ * Implements IToolSchemaProvider to enable Dependency Inversion Principle (DIP).
+ *
+ * **US4 Enhancement: Concurrency Limiting with Overflow Queue**
+ * - Tracks active concurrent requests per pool
+ * - Queues requests when concurrency limit reached
+ * - Records pool metrics (active connections, queue depth, wait time)
+ */
+export class MCPClientPool implements IToolSchemaProvider {
   private clients: Map<string, Client> = new Map();
   private toolCache: Map<string, ToolInfo> = new Map();
   private processes: Map<string, ProcessInfo> = new Map();
   private initialized = false;
+
+  // US4: Concurrency limiting and overflow queue
+  private maxConcurrent: number;
+  private activeConcurrent = 0;
+  private connectionQueue: ConnectionQueue;
+  private metricsExporter?: MetricsExporter;
+
+  /**
+   * Constructor (US4: FR-4 Integration)
+   *
+   * @param config - Optional pool configuration (concurrency limits, queue size)
+   * @param metricsExporter - Optional metrics exporter for recording pool metrics
+   */
+  constructor(config?: MCPClientPoolConfig, metricsExporter?: MetricsExporter) {
+    // T053: Configurable concurrency limit (default: 100)
+    // Env var: POOL_MAX_CONCURRENT
+    this.maxConcurrent = config?.maxConcurrent ?? parseInt(process.env.POOL_MAX_CONCURRENT ?? '100', 10);
+
+    // T053: Initialize connection queue
+    this.connectionQueue = new ConnectionQueue({
+      maxSize: config?.queueSize ?? parseInt(process.env.POOL_QUEUE_SIZE ?? '200', 10),
+      timeoutMs: config?.queueTimeoutMs ?? parseInt(process.env.POOL_QUEUE_TIMEOUT_MS ?? '30000', 10),
+    });
+
+    // T054: Optional metrics exporter for recording pool metrics
+    this.metricsExporter = metricsExporter;
+  }
 
   /**
    * Initialize client pool by reading config and connecting to servers
@@ -241,13 +303,20 @@ export class MCPClientPool {
   }
 
   /**
-   * Call an MCP tool through the appropriate client
+   * Call an MCP tool through the appropriate client (US4: FR-4 Integration)
+   *
+   * T053: Implements concurrency limiting with overflow queue:
+   * 1. Check if at capacity (activeConcurrent >= maxConcurrent)
+   * 2. If at capacity, enqueue request and wait
+   * 3. If under capacity, execute immediately
+   * 4. Record metrics (active connections, queue depth, wait time)
    *
    * @param toolName - Full MCP tool name (e.g., 'mcp__zen__codereview')
    * @param params - Tool parameters
+   * @param clientId - Optional client ID for queue tracking (default: 'unknown')
    * @returns Tool result
    */
-  async callTool(toolName: string, params: unknown): Promise<unknown> {
+  async callTool(toolName: string, params: unknown, clientId = 'unknown'): Promise<unknown> {
     if (!this.initialized) {
       throw new Error('MCPClientPool not initialized. Call initialize() first.');
     }
@@ -267,13 +336,56 @@ export class MCPClientPool {
       );
     }
 
-    // Get client for this server
-    const client = this.clients.get(toolInfo.server);
-    if (!client) {
-      throw new Error(`No client connected for server: ${toolInfo.server}`);
+    // T053: Check concurrency limit
+    if (this.activeConcurrent >= this.maxConcurrent) {
+      // T053: Pool at capacity, enqueue request
+      const requestId = `${clientId}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const queueStartTime = Date.now();
+
+      try {
+        await this.connectionQueue.enqueue({
+          requestId,
+          clientId,
+          toolName,
+        });
+
+        // T054: Record queue depth metric
+        const stats = this.connectionQueue.getStats();
+        if (this.metricsExporter) {
+          this.metricsExporter.setPoolQueueDepth(stats.queueSize);
+        }
+
+        // Wait until dequeued (slot available)
+        await this.waitForQueueSlot(requestId);
+
+        // T054: Record queue wait time metric
+        const queueWaitTimeSeconds = (Date.now() - queueStartTime) / 1000;
+        if (this.metricsExporter) {
+          this.metricsExporter.recordPoolQueueWait(queueWaitTimeSeconds);
+        }
+      } catch (error) {
+        // Queue full or timeout - return 503
+        throw new Error(
+          `Service Unavailable: ${(error as Error).message || 'Connection pool queue exhausted'}`
+        );
+      }
+    }
+
+    // T053: Slot available, increment active count
+    this.activeConcurrent++;
+
+    // T054: Record active connections metric
+    if (this.metricsExporter) {
+      this.metricsExporter.setPoolActiveConnections(this.activeConcurrent);
     }
 
     try {
+      // Get client for this server
+      const client = this.clients.get(toolInfo.server);
+      if (!client) {
+        throw new Error(`No client connected for server: ${toolInfo.server}`);
+      }
+
       // Call tool through client
       const result = await client.callTool({
         name: toolInfo.name,
@@ -292,6 +404,63 @@ export class MCPClientPool {
       return result;
     } catch (error) {
       throw normalizeError(error, `MCP tool '${toolName}' failed`);
+    } finally {
+      // T053: Decrement active count (slot freed)
+      this.activeConcurrent--;
+
+      // T054: Update active connections metric
+      if (this.metricsExporter) {
+        this.metricsExporter.setPoolActiveConnections(this.activeConcurrent);
+      }
+
+      // T053: Process next queued request if any
+      await this.processNextQueuedRequest();
+    }
+  }
+
+  /**
+   * Wait for queue slot to become available (T053)
+   *
+   * Polls the queue until this request is dequeued or timeout occurs.
+   *
+   * @param requestId - Request ID to wait for
+   * @private
+   */
+  private async waitForQueueSlot(requestId: string): Promise<void> {
+    // Poll every 100ms until dequeued
+    while (true) {
+      const nextRequest = await this.connectionQueue.dequeue();
+
+      if (nextRequest && nextRequest.requestId === requestId) {
+        // Our request dequeued, proceed
+        return;
+      }
+
+      if (nextRequest && nextRequest.requestId !== requestId) {
+        // Different request dequeued, re-enqueue it
+        await this.connectionQueue.enqueue(nextRequest);
+      }
+
+      // Wait 100ms before next poll
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  /**
+   * Process next queued request (T053)
+   *
+   * Called after a slot is freed to trigger processing of waiting requests.
+   *
+   * @private
+   */
+  private async processNextQueuedRequest(): Promise<void> {
+    // Dequeue next request (triggers waitForQueueSlot to resolve)
+    await this.connectionQueue.dequeue();
+
+    // Update queue depth metric
+    const stats = this.connectionQueue.getStats();
+    if (this.metricsExporter) {
+      this.metricsExporter.setPoolQueueDepth(stats.queueSize);
     }
   }
 
