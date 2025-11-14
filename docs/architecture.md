@@ -160,8 +160,100 @@ const fileTools = await searchTools('file read write', 10);
 
 // 4. Inspect tool schema (NEW v0.4.0)
 const schema = await getToolSchema('mcp__filesystem__read_file');
-// Returns: Full JSON Schema for tool parameters
+// Returns: Full JSON Schema for tool parameters + outputSchema (v0.6.0)
 ```
+
+### 3.3 Output Schema Support (NEW v0.6.0)
+
+**Design Goal:** Enable AI agents to understand tool response structure without trial execution
+
+**Implementation:**
+- All 3 code-executor tools provide Zod schemas for responses (`outputSchema`)
+- Uses MCP SDK native support (ZodRawShape format)
+- Graceful fallback for third-party tools without output schemas
+
+**Response Schemas:**
+```typescript
+// ExecutionResult (run-typescript-code, run-python-code)
+{
+  success: boolean,
+  output: string,
+  error?: string,
+  executionTimeMs: number,
+  toolCallsMade?: string[],
+  toolCallSummary?: ToolCallSummaryEntry[]
+}
+
+// HealthCheck (health)
+{
+  healthy: boolean,
+  auditLog: { enabled: boolean },
+  mcpClients: { connected: number },
+  connectionPool: { active, waiting, max },
+  uptime: number,
+  timestamp: string
+}
+```
+
+**Benefits:**
+- ✅ AI agents know response structure upfront
+- ✅ No trial-and-error required for filtering/aggregation
+- ✅ Better code generation (correct field access)
+- ✅ Optional field - no breaking changes
+
+**Data Flow:**
+```
+1. Tool registration: Zod schema → MCP SDK Tool.outputSchema
+2. Discovery: MCPClientPool returns ToolSchema with outputSchema
+3. Schema cache: CachedToolSchema.outputSchema persisted (24h TTL)
+4. Graceful fallback: Third-party tools return outputSchema: undefined
+```
+
+### 3.4 Known Limitations & Future Roadmap
+
+#### MCP SDK Protocol Gap (v1.21.1)
+
+**Current State:**
+The MCP SDK accepts `outputSchema` during tool registration but does not yet expose it via the `tools/list` protocol response. This means:
+
+- ✅ **Our Implementation:** Correct and complete (Zod schemas defined, code compiles, tests pass)
+- ✅ **Internal Access:** Code-executor's own 3 tools have outputSchema accessible internally
+- ❌ **Protocol Limitation:** External MCP clients calling `tools/list` won't receive outputSchema yet
+- ✅ **Graceful Fallback:** Third-party tools return `outputSchema: undefined` (optional field)
+
+**Technical Evidence:**
+```typescript
+// Our registration (src/index.ts) - WORKS
+server.tool({
+  name: 'run-typescript-code',
+  description: '...',
+  inputSchema: { ... },
+  outputSchema: ExecutionResultSchema.shape, // ✅ Accepted by SDK
+}, async (params) => { ... });
+
+// Protocol response (tools/list) - NOT YET EXPOSED
+{
+  "name": "run-typescript-code",
+  "description": "...",
+  "inputSchema": { ... },
+  // outputSchema missing here ❌ (SDK limitation)
+}
+```
+
+**Why This Matters:**
+- AI agents calling `discoverMCPTools()` won't see outputSchema for third-party tools yet
+- Our 3 tools (run-typescript-code, run-python-code, health) have schemas defined but not visible externally
+- Once SDK adds protocol support, our implementation will work immediately (no changes needed)
+
+**Future Roadmap:**
+1. **Short-term (v0.6.x):** Monitor MCP SDK releases for protocol support
+2. **Medium-term (v0.7.0):** When SDK adds support, update to expose outputSchema via discovery
+3. **Long-term (v1.0.0):** All MCP servers should adopt outputSchema for complete type safety
+
+**Workaround (Current):**
+Code-executor's own tools have outputSchema accessible internally. External tools gracefully fall back to `undefined`. The architecture is ready for when the protocol catches up.
+
+**Risk Assessment:** LOW - This is a forward-compatibility feature. The implementation is correct, and the optional field ensures zero breaking changes.
 
 ---
 

@@ -276,4 +276,177 @@ describe('ConnectionPool', () => {
       expect(stats.waiting).toBe(0);
     });
   });
+
+  describe('P1: Graceful Shutdown - drain()', () => {
+    it('should_drain_successfully_when_pool_empty', async () => {
+      const start = Date.now();
+      await pool.drain(5000);
+      const elapsed = Date.now() - start;
+
+      // Should complete immediately (no active connections)
+      expect(elapsed).toBeLessThan(100);
+      expect(pool.isDraining()).toBe(true);
+    });
+
+    it('should_wait_for_active_connections_to_complete', async () => {
+      // Start two long-running tasks
+      await pool.acquire();
+      await pool.acquire();
+
+      const task1 = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          pool.release();
+          resolve();
+        }, 200);
+      });
+
+      const task2 = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          pool.release();
+          resolve();
+        }, 300);
+      });
+
+      // Start drain (should wait for tasks to complete)
+      const drainStart = Date.now();
+      const drainPromise = pool.drain(5000);
+
+      // Wait for all to complete
+      await Promise.all([task1, task2, drainPromise]);
+
+      const elapsed = Date.now() - drainStart;
+
+      // Should have waited for task2 (~300ms)
+      expect(elapsed).toBeGreaterThanOrEqual(250);
+      expect(elapsed).toBeLessThan(500);
+
+      const stats = pool.getStats();
+      expect(stats.active).toBe(0);
+      expect(pool.isDraining()).toBe(true);
+    });
+
+    it('should_reject_new_acquisitions_during_drain', async () => {
+      // Start draining
+      const drainPromise = pool.drain(1000);
+
+      // Try to acquire (should be rejected)
+      await expect(pool.acquire()).rejects.toThrow(
+        'Connection pool is draining - no new connections accepted'
+      );
+
+      await drainPromise;
+    });
+
+    it('should_clear_waiting_queue_when_draining', async () => {
+      // Fill pool to capacity
+      await pool.acquire();
+      await pool.acquire();
+      await pool.acquire();
+
+      // Queue additional requests
+      const promise1 = pool.acquire();
+      const promise2 = pool.acquire();
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify queue has requests
+      let stats = pool.getStats();
+      expect(stats.waiting).toBe(2);
+
+      // Start drain (should clear waiting queue)
+      const drainPromise = pool.drain(5000);
+
+      // Release active connections
+      pool.release();
+      pool.release();
+      pool.release();
+
+      await drainPromise;
+
+      // Waiting queue should be empty
+      stats = pool.getStats();
+      expect(stats.waiting).toBe(0);
+
+      // Queued promises should still be pending (not resolved/rejected)
+      // This is acceptable - they just never complete
+      await expect(Promise.race([
+        promise1,
+        promise2,
+        new Promise((resolve) => setTimeout(() => resolve('timeout'), 100)),
+      ])).resolves.toBe('timeout');
+    });
+
+    it('should_timeout_if_connections_dont_complete', async () => {
+      // Start long-running task that won't complete in time
+      await pool.acquire();
+
+      const drainStart = Date.now();
+      await pool.drain(500); // 500ms timeout
+      const elapsed = Date.now() - drainStart;
+
+      // Should timeout after ~500ms
+      expect(elapsed).toBeGreaterThanOrEqual(450);
+      expect(elapsed).toBeLessThan(700);
+
+      // Pool should still be draining
+      expect(pool.isDraining()).toBe(true);
+
+      // Active connection should still exist (not released)
+      const stats = pool.getStats();
+      expect(stats.active).toBe(1);
+
+      // Cleanup
+      pool.release();
+    });
+
+    it('should_report_waiting_requests_cleared', async () => {
+      // Fill pool and queue requests
+      await pool.acquire();
+      await pool.acquire();
+      await pool.acquire();
+
+      pool.acquire(); // Will queue
+      pool.acquire(); // Will queue
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Start drain
+      const drainPromise = pool.drain(1000);
+
+      // Release slots
+      pool.release();
+      pool.release();
+      pool.release();
+
+      await drainPromise;
+
+      const stats = pool.getStats();
+      expect(stats.active).toBe(0);
+      expect(stats.waiting).toBe(0);
+    });
+
+    it('should_prevent_execute_during_drain', async () => {
+      // Start draining
+      const drainPromise = pool.drain(1000);
+
+      // Try to execute (should fail acquisition)
+      await expect(
+        pool.execute(async () => 'should not run')
+      ).rejects.toThrow('Connection pool is draining');
+
+      await drainPromise;
+    });
+
+    it('should_handle_multiple_drain_calls', async () => {
+      // Start first drain
+      const drain1 = pool.drain(1000);
+
+      // Second drain should also work (already draining)
+      const drain2 = pool.drain(1000);
+
+      await Promise.all([drain1, drain2]);
+
+      expect(pool.isDraining()).toBe(true);
+    });
+  });
 });

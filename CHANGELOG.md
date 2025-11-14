@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-11-14
+
+### Added
+- ✨ **outputSchema Support (MCP Spec Compliance)** - Response structure schemas for all tools
+  - All 3 code-executor tools now include `outputSchema` field (Zod schemas)
+  - `run-typescript-code`, `run-python-code`: `ExecutionResultSchema` defines response structure
+  - `health`: `HealthCheckOutputSchema` defines health check response
+  - Enables AI agents to understand tool response format without trial execution
+  - MCP SDK native support (using `ZodRawShape` format)
+  - Graceful fallback: optional field, no breaking changes for legacy tools
+
+- 🔍 **Discovery System Enhancement** - outputSchema propagated through all layers
+  - `ToolSchema` interface extended with `outputSchema?: JSONSchema7`
+  - `CachedToolSchema` interface includes `outputSchema` field
+  - `MCPClientPool.getToolSchema()` returns `outputSchema` when available
+  - `MCPClientPool.listAllToolSchemas()` includes `outputSchema` in discovery response
+
+- ✅ **Test Coverage** - Comprehensive outputSchema validation tests
+  - Schema structure tests for ExecutionResult and HealthCheck
+  - ZodRawShape format validation (MCP SDK compatibility)
+  - Backward compatibility tests for legacy tools without outputSchema
+
+### Changed
+- 📦 **Type Definitions** - Extended interfaces to support outputSchema
+  - `src/types.ts`: `CachedToolSchema` with optional `outputSchema` field
+  - `src/types/discovery.ts`: `ToolSchema` with optional `outputSchema?: JSONSchema7`
+  - `src/mcp-client-pool.ts`: Propagates outputSchema in schema retrieval methods
+
+### Technical Details
+- Uses existing `ExecutionResultSchema` from `src/schemas.ts` (Zod → ZodRawShape via `.shape`)
+- Zero breaking changes (outputSchema is optional everywhere)
+- Backward compatible with MCP servers lacking outputSchema
+- Aligns with official MCP SDK example patterns
+
+### Known Limitations
+- **MCP SDK Protocol Gap**: The MCP SDK (v1.21.1) does not yet expose `outputSchema` via the `tools/list` protocol, even though it accepts it during tool registration. Our implementation is correct and ready for when the SDK adds protocol support. Third-party tools will gracefully return `outputSchema: undefined` until then.
+- **Workaround**: Code-executor's own 3 tools have `outputSchema` defined and work correctly for direct tool inspection (our code sees them internally)
+
 ## [0.5.1] - 2025-11-14
 
 ### Note

@@ -13,7 +13,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { initConfig, isPythonEnabled, isRateLimitEnabled, getRateLimitConfig, shouldSkipDangerousPatternCheck } from './config.js';
-import { ExecuteTypescriptInputSchema, ExecutePythonInputSchema } from './schemas.js';
+import { ExecuteTypescriptInputSchema, ExecutePythonInputSchema, ExecutionResultSchema } from './schemas.js';
 import { MCPClientPool } from './mcp-client-pool.js';
 import { SecurityValidator } from './security.js';
 import { ConnectionPool } from './connection-pool.js';
@@ -28,6 +28,27 @@ import { VERSION } from './version.js';
 import type { MCPExecutionResult } from './types.js';
 
 /**
+ * Health check response schema (Zod)
+ * Used as outputSchema for the health tool
+ */
+const HealthCheckOutputSchema = z.object({
+  healthy: z.boolean().describe('Overall health status'),
+  auditLog: z.object({
+    enabled: z.boolean().describe('Audit logging enabled'),
+  }).describe('Audit log configuration'),
+  mcpClients: z.object({
+    connected: z.number().describe('Number of connected MCP tools'),
+  }).describe('MCP client connections'),
+  connectionPool: z.object({
+    active: z.number().describe('Active concurrent executions'),
+    waiting: z.number().describe('Queued executions waiting'),
+    max: z.number().describe('Maximum concurrent limit'),
+  }).describe('Connection pool status'),
+  uptime: z.number().describe('Server uptime in seconds'),
+  timestamp: z.string().describe('ISO 8601 timestamp'),
+});
+
+/**
  * Main server class
  */
 class CodeExecutorServer {
@@ -38,6 +59,7 @@ class CodeExecutorServer {
   private rateLimiter: RateLimiter | null = null;
   private denoAvailable: boolean = false;
   private healthCheckServer: HealthCheckServer | null = null;
+  private shutdownInProgress = false; // P1: Prevent concurrent shutdown attempts
 
   constructor() {
     // Initialize MCP server
@@ -218,6 +240,7 @@ Example:
           }).default({}).describe('Deno sandbox permissions'),
           skipDangerousPatternCheck: z.boolean().optional().describe('Skip dangerous pattern validation (defense-in-depth only)'),
         },
+        outputSchema: ExecutionResultSchema.shape,
         annotations: {
           readOnlyHint: false,
           destructiveHint: false,
@@ -380,6 +403,7 @@ Example:
           }).default({}).describe('Subprocess permissions'),
           skipDangerousPatternCheck: z.boolean().optional().describe('Skip dangerous pattern validation (defense-in-depth only)'),
         },
+        outputSchema: ExecutionResultSchema.shape,
         annotations: {
           readOnlyHint: false,
           destructiveHint: false,
@@ -505,6 +529,7 @@ Returns:
     "uptime": number
   }`,
         inputSchema: {},
+        outputSchema: HealthCheckOutputSchema.shape,
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -617,23 +642,77 @@ Returns:
   /**
    * Shutdown server
    */
-  async shutdown(): Promise<void> {
-    // Stop health check server
-    if (this.healthCheckServer) {
+  /**
+   * Graceful shutdown with request draining
+   *
+   * P1: Wait for in-flight executions to complete before shutdown.
+   * Fixes race condition where active TypeScript/Python executions are killed mid-operation.
+   *
+   * Shutdown sequence:
+   * 1. Drain connection pool (wait for active executions with 30s timeout)
+   * 2. Stop health check server
+   * 3. Clean up rate limiter
+   * 4. Disconnect MCP clients (with 2s SIGTERM grace period)
+   *
+   * @param timeoutMs - Maximum time for entire shutdown (default: 35s = 30s drain + 5s cleanup)
+   */
+  async shutdown(timeoutMs: number = 35000): Promise<void> {
+    // P1: Prevent concurrent shutdown attempts (manual + signal handler races)
+    if (this.shutdownInProgress) {
+      console.error('Shutdown already in progress - ignoring duplicate call');
+      return;
+    }
+    this.shutdownInProgress = true;
+
+    const shutdownStart = Date.now();
+
+    // Wrap entire shutdown in timeout protection
+    const shutdownPromise = (async () => {
+      // Phase 1: Drain connection pool (wait for active executions)
+      console.error('Phase 1: Draining connection pool...');
       try {
-        await this.healthCheckServer.stop();
+        await this.connectionPool.drain(30000); // 30s timeout for executions
       } catch (error) {
-        console.error('Error stopping health check server:', error);
+        console.error('Error draining connection pool:', error);
       }
-    }
 
-    // Clean up rate limiter
-    if (this.rateLimiter) {
-      this.rateLimiter.destroy();
-    }
+      // Phase 2: Stop health check server
+      console.error('Phase 2: Stopping health check server...');
+      if (this.healthCheckServer) {
+        try {
+          await this.healthCheckServer.stop();
+        } catch (error) {
+          console.error('Error stopping health check server:', error);
+        }
+      }
 
-    // Disconnect MCP clients
-    await this.mcpClientPool.disconnect();
+      // Phase 3: Clean up rate limiter
+      console.error('Phase 3: Cleaning up rate limiter...');
+      if (this.rateLimiter) {
+        this.rateLimiter.destroy();
+      }
+
+      // Phase 4: Disconnect MCP clients (with 2s SIGTERM grace period)
+      console.error('Phase 4: Disconnecting MCP clients...');
+      await this.mcpClientPool.disconnect();
+
+      const elapsed = Date.now() - shutdownStart;
+      console.error(`✓ Graceful shutdown completed in ${elapsed}ms`);
+    })();
+
+    // Race against timeout
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const elapsed = Date.now() - shutdownStart;
+        console.error(
+          `⚠️ Shutdown timeout after ${timeoutMs}ms (elapsed: ${elapsed}ms) - forcing exit`
+        );
+        resolve();
+      }, timeoutMs);
+    });
+
+    await Promise.race([shutdownPromise, timeoutPromise]);
+
     process.exit(0);
   }
 }
@@ -641,16 +720,20 @@ Returns:
 // Start server
 const server = new CodeExecutorServer();
 
-// Handle shutdown signals
-process.on('SIGINT', async () => {
-  console.error('Received SIGINT, shutting down...');
-  await server.shutdown();
-});
+// P1: Graceful shutdown signal handlers (flag now in CodeExecutorServer class)
+const handleShutdownSignal = async (signal: string) => {
+  console.error(`Received ${signal}, initiating graceful shutdown...`);
 
-process.on('SIGTERM', async () => {
-  console.error('Received SIGTERM, shutting down...');
-  await server.shutdown();
-});
+  try {
+    await server.shutdown(); // Internal flag protects against concurrent calls
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGINT', () => void handleShutdownSignal('SIGINT'));
+process.on('SIGTERM', () => void handleShutdownSignal('SIGTERM'));
 
 // Start server
 server.start().catch((error) => {

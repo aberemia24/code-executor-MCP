@@ -508,6 +508,7 @@ export class MCPClientPool implements IToolSchemaProvider {
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema, // Graceful fallback: undefined if not present
       };
     } catch (error) {
       throw normalizeError(error, `Failed to fetch schema for ${toolName}`);
@@ -577,11 +578,12 @@ export class MCPClientPool implements IToolSchemaProvider {
         }
 
         // Transform CachedToolSchema to ToolSchema format
-        // inputSchema → parameters, description? → description (required)
+        // inputSchema → parameters, description? → description (required), outputSchema (optional)
         return {
           name: fullToolName,
           description: schema.description ?? '',
           parameters: schema.inputSchema,
+          outputSchema: schema.outputSchema, // Graceful fallback: undefined if not present
         } as ToolSchema;
       } catch (error) {
         // Resilient aggregation: log error but continue with other tools

@@ -51,6 +51,34 @@ export interface ToolSchema {
    * Defines required/optional parameters, types, and constraints.
    */
   parameters: JSONSchema7;
+
+  /**
+   * JSON Schema definition for tool response structure (optional)
+   *
+   * Follows JSON Schema Draft 7 specification.
+   * Describes the format of the tool's response/output.
+   *
+   * When present, enables AI agents to:
+   * - Understand response structure without trial execution
+   * - Write filtering/aggregation code correctly
+   * - Validate responses match expected format
+   *
+   * Graceful fallback: undefined for third-party tools without outputSchema.
+   *
+   * @example
+   * ```typescript
+   * outputSchema: {
+   *   type: 'object',
+   *   properties: {
+   *     success: { type: 'boolean' },
+   *     output: { type: 'string' },
+   *     executionTimeMs: { type: 'number' }
+   *   },
+   *   required: ['success', 'output', 'executionTimeMs']
+   * }
+   * ```
+   */
+  outputSchema?: JSONSchema7;
 }
 
 /**
