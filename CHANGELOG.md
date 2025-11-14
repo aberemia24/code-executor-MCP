@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2025-11-14
+
+### Fixed
+- 🔧 **MCP SDK Upgrade (v1.0.4 → v1.22.0)** - Native outputSchema protocol support
+  - Updated handler signatures: `(params)` → `(args, extra)` for v1.22.0 API
+  - Added `RequestHandlerExtra` import for request context support
+  - All 3 tools (run-typescript-code, run-python-code, health) migrated
+  - OutputSchema now properly exposed via tools/list protocol response
+  - **Resolves #28**: AI agents can now see response structure without trial execution
+
+### Changed
+- 📦 **Handler API Migration** - v1.22.0 breaking changes
+  - Handlers now receive `(args, extra)` instead of `(params)`
+  - Added `RequestHandlerExtra<any, any>` type for request context
+  - Maintained Zod runtime validation (zero functional changes)
+
+### Technical Details
+- MCP SDK v1.22.0 natively exposes outputSchema in protocol (confirmed via standalone test)
+- All 620 tests passing, zero regressions
+- Handler signature changes required by v1.22.0 API
+- Runtime validation unchanged (Zod schemas still enforced)
+
+### Known Limitations Removed
+- ~~MCP SDK Protocol Gap~~ - **RESOLVED** in v1.22.0
+- OutputSchema is now fully functional in the protocol
+- All tools expose response structure via tools/list
+
 ## [0.6.0] - 2025-11-14
 
 ### Added
