@@ -20,6 +20,17 @@ const DISCOVERY_TIMEOUT_MS = 500; // Discovery endpoint timeout (matches NFR-2 r
 const SANDBOX_MEMORY_LIMIT_MB = 128; // V8 heap limit to prevent memory exhaustion attacks
 
 /**
+ * Normalize line endings to LF (Unix-style) for consistent hashing
+ * Handles CRLF (Windows), CR (old Mac), and mixed line endings
+ *
+ * WHY: Filesystem may normalize line endings during write, causing
+ * hash mismatches in integrity checks (TOCTOU vulnerability mitigation)
+ */
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
  * Execute TypeScript code in Deno sandbox with MCP access
  */
 export async function executeTypescriptInSandbox(
@@ -77,12 +88,12 @@ export async function executeTypescriptInSandbox(
 
     // SECURITY: Verify temp file integrity (defense-in-depth)
     // Ensures file wasn't modified between write and execution
-    // TEMPORARILY DISABLED: Investigating integrity check failures
-    // TODO: Re-enable after fixing root cause
-    /*
+    // Normalize line endings (CRLF → LF) before hashing to handle OS differences
     const writtenContent = await fs.readFile(userCodeFile, 'utf-8');
-    const originalHash = crypto.createHash('sha256').update(options.code).digest('hex');
-    const writtenHash = crypto.createHash('sha256').update(writtenContent).digest('hex');
+    const normalizedOriginal = normalizeLineEndings(options.code);
+    const normalizedWritten = normalizeLineEndings(writtenContent);
+    const originalHash = crypto.createHash('sha256').update(normalizedOriginal).digest('hex');
+    const writtenHash = crypto.createHash('sha256').update(normalizedWritten).digest('hex');
 
     if (originalHash !== writtenHash) {
       throw new Error(
@@ -90,7 +101,6 @@ export async function executeTypescriptInSandbox(
         'This is a critical security violation.'
       );
     }
-    */
 
     // Create wrapper code that injects callMCPTool() + discovery functions and imports user code
     const wrappedCode = `
