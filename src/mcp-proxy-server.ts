@@ -12,6 +12,7 @@ import { AllowlistValidator, ToolCallTracker } from './proxy-helpers.js';
 import { SchemaCache } from './schema-cache.js';
 import { SchemaValidator } from './schema-validator.js';
 import { RateLimiter } from './rate-limiter.js';
+import { MetricsExporter } from './metrics-exporter.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 import type { ToolCallSummaryEntry } from './types.js';
 
@@ -47,6 +48,7 @@ export class MCPProxyServer {
   private schemaCache: SchemaCache;
   private schemaValidator: SchemaValidator;
   private rateLimiter: RateLimiter;
+  private metricsExporter: MetricsExporter;
   private discoveryTimeoutMs: number;
 
   /**
@@ -54,6 +56,7 @@ export class MCPProxyServer {
    *
    * @param mcpClientPool - Pool of MCP clients to proxy requests to
    * @param allowedTools - Whitelist of allowed MCP tool names
+   * @param metricsExporter - Prometheus metrics exporter for observability (optional)
    * @param discoveryTimeoutMs - Timeout for discovery endpoint queries in milliseconds (default: 500ms)
    *
    * SECURITY: Generates random bearer token for authentication
@@ -61,6 +64,7 @@ export class MCPProxyServer {
   constructor(
     private mcpClientPool: MCPClientPool,
     allowedTools: string[],
+    metricsExporter?: MetricsExporter,
     discoveryTimeoutMs: number = 500
   ) {
     this.validator = new AllowlistValidator(allowedTools);
@@ -72,6 +76,8 @@ export class MCPProxyServer {
       maxRequests: 30,
       windowMs: 60000, // 60 seconds
     });
+    // Metrics exporter (default to new instance if not provided)
+    this.metricsExporter = metricsExporter || new MetricsExporter();
     // Discovery timeout configuration
     this.discoveryTimeoutMs = discoveryTimeoutMs;
     // Generate cryptographically secure random token (32 bytes = 64 hex chars)
@@ -98,6 +104,12 @@ export class MCPProxyServer {
         const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
         const pathname = url.pathname;
 
+        // Route: GET /metrics → Prometheus metrics endpoint
+        if (req.method === 'GET' && pathname === '/metrics') {
+          await this.handleMetricsRequest(req, res);
+          return;
+        }
+
         // Route: GET /mcp/tools → Discovery endpoint
         if (req.method === 'GET' && pathname === '/mcp/tools') {
           await this.handleDiscoveryRequest(req, res);
@@ -117,6 +129,7 @@ export class MCPProxyServer {
           validRoutes: [
             'POST / - Execute MCP tool',
             'GET /mcp/tools - Discover available tools',
+            'GET /metrics - Prometheus metrics',
           ],
         }));
       });
@@ -265,9 +278,15 @@ export class MCPProxyServer {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): Promise<void> {
+    const startTime = process.hrtime.bigint();
+
     // SECURITY: Validate bearer token authentication (constant-time comparison)
     const authHeader = req.headers['authorization'];
     if (!this.validateBearerToken(authHeader)) {
+      const duration = Number(process.hrtime.bigint() - startTime) / 1e9; // Convert to seconds
+      this.metricsExporter.recordHttpRequest('POST', 401);
+      this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
@@ -291,6 +310,10 @@ export class MCPProxyServer {
 
       // Validate against allowlist
       if (!this.validator.isAllowed(toolName)) {
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('POST', 403);
+        this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
         const allowedTools = this.validator.getAllowedTools();
         res.writeHead(403);
         res.end(
@@ -311,6 +334,10 @@ export class MCPProxyServer {
       if (schema) {
         const validation = this.schemaValidator.validate(params, schema);
         if (!validation.valid) {
+          const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+          this.metricsExporter.recordHttpRequest('POST', 400);
+          this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
           const errorMessage = this.schemaValidator.formatError(
             toolName,
             params,
@@ -334,6 +361,11 @@ export class MCPProxyServer {
           status: 'success',
         });
 
+        // Record successful request metrics
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('POST', 200);
+        this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
         // Return result
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ result }));
@@ -348,6 +380,11 @@ export class MCPProxyServer {
           errorMessage: normalized.message,
         });
 
+        // Record error request metrics
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('POST', 500);
+        this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
         res.writeHead(500);
         res.end(
           JSON.stringify({
@@ -357,6 +394,10 @@ export class MCPProxyServer {
         return;
       }
     } catch (error) {
+      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+      this.metricsExporter.recordHttpRequest('POST', 500);
+      this.metricsExporter.recordHttpDuration('POST', '/', duration);
+
       res.writeHead(500);
       res.end(
         JSON.stringify({
@@ -384,10 +425,16 @@ export class MCPProxyServer {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): Promise<void> {
+    const startTime = process.hrtime.bigint();
+
     try {
       // SECURITY: Validate bearer token authentication
       const authHeader = req.headers['authorization'];
       if (!this.validateBearerToken(authHeader)) {
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('GET', 401);
+        this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
+
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
@@ -404,6 +451,10 @@ export class MCPProxyServer {
       // Rate limit applies to the single sandbox execution, not across multiple clients.
       const rateLimit = await this.rateLimiter.checkLimit('default');
       if (!rateLimit.allowed) {
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('GET', 429);
+        this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
+
         res.writeHead(429, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
@@ -423,6 +474,10 @@ export class MCPProxyServer {
       // Validate search queries
       const validationError = this.validateSearchQuery(searchParams);
       if (validationError) {
+        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+        this.metricsExporter.recordHttpRequest('GET', 400);
+        this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
+
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(validationError));
         return;
@@ -464,6 +519,11 @@ export class MCPProxyServer {
         timestamp: new Date().toISOString(),
       }));
 
+      // Record successful request metrics
+      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+      this.metricsExporter.recordHttpRequest('GET', 200);
+      this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
+
       // Return JSON response with tool schemas
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
@@ -472,6 +532,11 @@ export class MCPProxyServer {
         })
       );
     } catch (error) {
+      // Record error metrics
+      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+      this.metricsExporter.recordHttpRequest('GET', 500);
+      this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
+
       // Error handling
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(
@@ -533,5 +598,58 @@ export class MCPProxyServer {
       const searchText = `${tool.name} ${tool.description}`.toLowerCase();
       return keywords.some((keyword) => searchText.includes(keyword.toLowerCase()));
     });
+  }
+
+  /**
+   * Handle GET /metrics - Prometheus Metrics Endpoint
+   *
+   * Returns Prometheus exposition format metrics for monitoring:
+   * - Cache metrics (hits/misses)
+   * - HTTP metrics (requests, duration)
+   * - Circuit breaker metrics (state)
+   * - Connection pool metrics (active connections, queue depth)
+   *
+   * SECURITY: Requires authentication by default. Metrics endpoints expose
+   * operational data that can be used for reconnaissance attacks.
+   *
+   * WHY: Information disclosure risk - metrics reveal:
+   * - Cache access patterns (schema usage profiling)
+   * - HTTP request rates (usage patterns, attack surface)
+   * - Circuit breaker states (MCP server availability)
+   * - Connection pool capacity (resource limits)
+   *
+   * CONSTITUTIONAL COMPLIANCE: Aligns with Principle 2 (Security Zero Tolerance)
+   */
+  private async handleMetricsRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): Promise<void> {
+    // SECURITY: Validate bearer token authentication
+    const authHeader = req.headers['authorization'];
+    if (!this.validateBearerToken(authHeader)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Unauthorized - invalid or missing authentication token',
+          hint: 'Provide Authorization: Bearer <token> header',
+        })
+      );
+      return;
+    }
+
+    try {
+      const metrics = await this.metricsExporter.getMetrics();
+
+      // Return Prometheus text format
+      res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+      res.end(metrics);
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: normalizeError(error, 'Metrics request failed').message,
+        })
+      );
+    }
   }
 }

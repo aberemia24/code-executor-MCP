@@ -1,12 +1,17 @@
 /**
- * Schema Validator Module
+ * Schema Validator Module (US13: FR-12 Integration)
  *
  * Validates tool call parameters against JSON schemas using AJV.
  * Provides deep recursive validation with clear, actionable error messages.
+ *
+ * **US13 Enhancement:** Integrated AjvErrorFormatter for user-friendly errors
+ * with actionable "Try this..." suggestions.
  */
 
 import { Ajv } from 'ajv';
-import type { CachedToolSchema } from './schema-cache.js';
+import type { CachedToolSchema } from './types.js';
+import { AjvErrorFormatter } from './ajv-error-formatter.js';
+import type { FormattedError } from './ajv-error-formatter.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -14,10 +19,13 @@ export interface ValidationResult {
   missing?: string[];
   unexpected?: string[];
   typeMismatch?: Array<{ param: string; expected: string; got: string }>;
+  /** US13: User-friendly error with suggestions (NEW) */
+  formattedError?: FormattedError;
 }
 
 export class SchemaValidator {
   private ajv: Ajv;
+  private formatter: AjvErrorFormatter; // US13: Error formatter
 
   constructor() {
     // Initialize AJV with strict mode for comprehensive validation
@@ -27,10 +35,15 @@ export class SchemaValidator {
       validateFormats: true, // Validate string formats (email, uri, etc.)
       verbose: true, // Include schema and data in errors
     });
+
+    // US13: Initialize error formatter for user-friendly messages
+    this.formatter = new AjvErrorFormatter();
   }
 
   /**
    * Validate parameters against a tool schema using AJV (deep, recursive validation)
+   *
+   * T137: US13 Integration - Enhanced with AjvErrorFormatter for user-friendly errors
    */
   validate(params: unknown, schema: CachedToolSchema): ValidationResult {
     // Use AJV to validate against the JSON Schema
@@ -41,7 +54,14 @@ export class SchemaValidator {
       return { valid: true };
     }
 
-    // Parse AJV errors into our format
+    // US13: Generate user-friendly formatted errors with suggestions
+    const formattedError = this.formatter.format(
+      validate.errors || [],
+      schema.inputSchema,
+      params
+    );
+
+    // Parse AJV errors into our legacy format (backwards compatibility)
     const errors: string[] = [];
     const missing: string[] = [];
     const unexpected: string[] = [];
@@ -99,6 +119,7 @@ export class SchemaValidator {
       missing: missing.length > 0 ? missing : undefined,
       unexpected: unexpected.length > 0 ? unexpected : undefined,
       typeMismatch: typeMismatch.length > 0 ? typeMismatch : undefined,
+      formattedError, // US13: Include formatted error with suggestions
     };
   }
 

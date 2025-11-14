@@ -12,7 +12,7 @@
  * - Automatic eviction of least recently used schemas
  */
 
-import type { MCPClientPool } from './mcp-client-pool.js';
+import type { IToolSchemaProvider, CachedToolSchema } from './types.js';
 import type { ICacheProvider } from './cache-provider.js';
 import { LRUCacheProvider } from './lru-cache-provider.js';
 import * as fs from 'fs/promises';
@@ -26,19 +26,6 @@ interface CachedSchema {
   expiresAt: number;
 }
 
-export interface CachedToolSchema {
-  name: string;
-  description?: string;
-  inputSchema: {
-    type?: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    properties?: Record<string, any>; // JSON Schema properties can have any structure
-    required?: string[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: any; // JSON Schema allows arbitrary additional properties
-  };
-}
-
 export class SchemaCache {
   private cache: ICacheProvider<string, CachedSchema>;
   private readonly ttlMs: number;
@@ -48,7 +35,7 @@ export class SchemaCache {
   private inFlight: Map<string, Promise<CachedToolSchema | null>>;
 
   constructor(
-    private mcpClientPool: MCPClientPool,
+    private schemaProvider: IToolSchemaProvider,
     ttlMs: number = 24 * 60 * 60 * 1000, // 24 hours default (long TTL since we use failure-triggered refresh)
     cachePath?: string, // Optional cache path (for testing)
     maxCacheSize: number = 1000 // Max schemas in cache (prevents unbounded growth)
@@ -147,7 +134,7 @@ export class SchemaCache {
     // Load existing cache from disk
     await this.loadFromDisk();
 
-    const allTools = this.mcpClientPool.listAllTools();
+    const allTools = this.schemaProvider.listAllTools();
     const now = Date.now();
 
     // Only fetch schemas that are missing or expired
@@ -221,8 +208,8 @@ export class SchemaCache {
     staleCached?: CachedSchema
   ): Promise<CachedToolSchema | null> {
     try {
-      // Fetch schema from MCP client pool
-      const fullSchema = await this.mcpClientPool.getToolSchema(toolName);
+      // Fetch schema from schema provider
+      const fullSchema = await this.schemaProvider.getToolSchema(toolName);
 
       if (!fullSchema) {
         return null;
