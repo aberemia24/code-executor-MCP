@@ -193,17 +193,51 @@ export interface IToolSchemaProvider {
 
 /**
  * Cached tool schema (used by SchemaCache and IToolSchemaProvider)
+ *
+ * NOTE ON `any` TYPES:
+ * JSON Schema supports arbitrary nesting and dynamic properties that cannot be
+ * statically typed in TypeScript. Runtime validation is enforced by AJV in SchemaValidator.
+ *
+ * Why `any` is unavoidable here:
+ * - JSON Schema allows recursive nesting (properties can contain sub-schemas)
+ * - Properties can have arbitrary keys and value types (e.g., "type", "enum", "anyOf", etc.)
+ * - No safer TypeScript alternative exists for this dynamic structure
+ *
+ * Safety mitigations:
+ * - Runtime validation with AJV in SchemaValidator (strict type checking)
+ * - Deep recursive validation (nested objects, arrays, constraints, enums)
+ * - No type coercion (integer ≠ number)
+ *
+ * @see SchemaValidator for runtime type checking implementation
  */
 export interface CachedToolSchema {
   name: string;
   description?: string;
+  /**
+   * JSON Schema for tool input parameters
+   *
+   * Uses `any` because JSON Schema supports arbitrary nesting (see interface JSDoc above)
+   */
   inputSchema: {
     type?: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     properties?: Record<string, any>;
     required?: string[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: any;
+    [key: string]: any; // Index signature for arbitrary JSON Schema properties
+  };
+  /**
+   * Optional JSON Schema describing the tool's response structure
+   *
+   * Uses `any` for same reasons as inputSchema (arbitrary JSON Schema nesting)
+   */
+  outputSchema?: {
+    type?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    properties?: Record<string, any>;
+    required?: string[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any; // Index signature for arbitrary JSON Schema properties
   };
 }
 
