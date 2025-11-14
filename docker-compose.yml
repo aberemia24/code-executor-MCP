@@ -88,6 +88,60 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Redis service for distributed caching (US14)
+  redis:
+    image: redis:7-alpine
+    container_name: code-executor-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    # SECURITY: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'      # Max 0.5 CPU core
+          memory: 256M     # Max 256MB RAM
+          pids: 10         # Max 10 processes
+        reservations:
+          cpus: '0.1'      # Reserve 0.1 cores
+          memory: 64M      # Reserve 64MB
+
+    # SECURITY: Read-only root filesystem
+    read_only: true
+
+    # Writable data directory
+    tmpfs:
+      - /data:mode=0700,size=200M  # 200MB for Redis data
+
+    # SECURITY: Drop all capabilities
+    cap_drop:
+      - ALL
+
+    # SECURITY: No new privileges
+    security_opt:
+      - no-new-privileges:true
+
+    # SECURITY: Isolated network
+    networks:
+      - code-executor-network
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
 # SECURITY: Isolated network with egress firewall
 networks:
   code-executor-network:

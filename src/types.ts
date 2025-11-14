@@ -135,6 +135,46 @@ export interface ToolInfo {
 }
 
 /**
+ * Tool schema provider abstraction
+ *
+ * Enables Dependency Inversion Principle (DIP) by allowing high-level modules
+ * (like SchemaCache) to depend on this abstraction instead of concrete implementations
+ * (like MCPClientPool). This improves testability and allows swapping implementations.
+ */
+export interface IToolSchemaProvider {
+  /**
+   * List all available tools from connected MCP servers
+   *
+   * @returns Array of tool information (server, name, description)
+   */
+  listAllTools(): ToolInfo[];
+
+  /**
+   * Get full schema for a specific tool
+   *
+   * @param toolName - Full MCP tool name (e.g., 'mcp__zen__codereview')
+   * @returns Tool schema with inputSchema, or null if not found
+   */
+  getToolSchema(toolName: string): Promise<CachedToolSchema | null>;
+}
+
+/**
+ * Cached tool schema (used by SchemaCache and IToolSchemaProvider)
+ */
+export interface CachedToolSchema {
+  name: string;
+  description?: string;
+  inputSchema: {
+    type?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    properties?: Record<string, any>;
+    required?: string[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
+  };
+}
+
+/**
  * Execution audit log entry
  */
 export interface AuditLogEntry {

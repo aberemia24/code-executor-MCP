@@ -20,7 +20,7 @@ import { ConnectionPool } from './connection-pool.js';
 import { RateLimiter } from './rate-limiter.js';
 import { executeTypescriptInSandbox } from './sandbox-executor.js';
 import { executePythonInSandbox } from './python-executor.js';
-import { formatErrorResponse } from './utils.js';
+import { formatErrorResponse, formatExecutionResultForCli } from './utils.js';
 import { ErrorType } from './types.js';
 import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './deno-checker.js';
 import { HealthCheckServer } from './health-check.js';
@@ -308,7 +308,7 @@ Example:
           return {
             content: [{
               type: 'text' as const,
-              text: JSON.stringify(result, null, 2),
+              text: formatExecutionResultForCli(result),
             }],
             structuredContent: result as MCPExecutionResult,
             isError: !result.success,
@@ -469,7 +469,7 @@ Example:
           return {
             content: [{
               type: 'text' as const,
-              text: JSON.stringify(result, null, 2),
+              text: formatExecutionResultForCli(result),
             }],
             structuredContent: result as MCPExecutionResult,
             isError: !result.success,

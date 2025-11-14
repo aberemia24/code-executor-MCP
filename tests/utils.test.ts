@@ -13,6 +13,7 @@ import {
   isAllowedPath,
   sanitizeOutput,
   normalizeError,
+  formatExecutionResultForCli,
 } from '../src/utils.js';
 import { ErrorType } from '../src/types.js';
 
@@ -277,5 +278,75 @@ describe('normalizeError', () => {
       expect(normalized).toBeInstanceOf(Error);
       expect(normalized.message).toContain('Process failed:');
     });
+  });
+});
+
+describe('formatExecutionResultForCli', () => {
+  it('should_render_success_result_with_sections', () => {
+    const formatted = formatExecutionResultForCli({
+      success: true,
+      output: 'Hello\nWorld',
+      executionTimeMs: 1500,
+      toolCallsMade: ['mcp__example__tool'],
+    });
+
+    expect(formatted).toContain('Status: SUCCESS');
+    expect(formatted).toContain('Stdout:');
+    expect(formatted).toContain('  Hello');
+    expect(formatted).toContain('  World');
+    expect(formatted).toContain('Stderr:');
+    expect(formatted).toContain('  (none)');
+    expect(formatted).toContain('Duration:');
+    expect(formatted).toContain('  1.50s');
+    expect(formatted).toContain('Tool Calls:');
+    expect(formatted).toContain('  - mcp__example__tool');
+  });
+
+  it('should_render_failure_with_error_output', () => {
+    const formatted = formatExecutionResultForCli({
+      success: false,
+      output: '',
+      error: 'ReferenceError: x is not defined',
+      executionTimeMs: 250,
+      toolCallsMade: [],
+    });
+
+    expect(formatted).toContain('Status: FAILURE');
+    expect(formatted).toContain('Stdout:');
+    expect(formatted).toContain('  (none)');
+    expect(formatted).toContain('Stderr:');
+    expect(formatted).toContain('  ReferenceError: x is not defined');
+    expect(formatted).toContain('Duration:');
+    expect(formatted).toContain('  250ms');
+    expect(formatted).toContain('Tool Calls:');
+    expect(formatted).toContain('  None');
+  });
+
+  it('should_mark_timeouts_with_dedicated_status', () => {
+    const formatted = formatExecutionResultForCli({
+      success: false,
+      output: '',
+      error: 'Execution timeout after 30.00s',
+      executionTimeMs: 30000,
+      toolCallsMade: ['mcp__slow__tool'],
+    });
+
+    expect(formatted).toContain('Status: TIMEOUT');
+    expect(formatted).toContain('Tool Calls:');
+    expect(formatted).toContain('  - mcp__slow__tool');
+  });
+
+  it('should_apply_optional_ansi_styling', () => {
+    const formatted = formatExecutionResultForCli(
+      {
+        success: true,
+        output: '',
+        executionTimeMs: 10,
+      },
+      { useColor: true }
+    );
+
+    expect(formatted).toContain('\u001b[1;32mStatus: SUCCESS\u001b[0m');
+    expect(formatted).toContain('\u001b[1mStdout:\u001b[0m');
   });
 });

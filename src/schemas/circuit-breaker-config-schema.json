@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/aberemia24/code-executor-MCP/schemas/circuit-breaker-config",
+  "title": "Circuit Breaker Configuration Schema",
+  "description": "Validates circuit breaker configuration. Controls fault isolation thresholds and cooldown periods.",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable circuit breaker (disable for testing only)",
+      "default": true
+    },
+    "failureThreshold": {
+      "type": "integer",
+      "description": "Consecutive failures before opening circuit",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 5
+    },
+    "cooldownMs": {
+      "type": "integer",
+      "description": "Cooldown duration in milliseconds before retry (half-open state)",
+      "minimum": 1000,
+      "maximum": 300000,
+      "default": 30000
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "MCP call timeout in milliseconds (fail if no response)",
+      "minimum": 1000,
+      "maximum": 300000,
+      "default": 60000
+    }
+  },
+  "required": ["enabled", "failureThreshold", "cooldownMs", "timeout"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "enabled": true,
+      "failureThreshold": 5,
+      "cooldownMs": 30000,
+      "timeout": 60000
+    },
+    {
+      "enabled": true,
+      "failureThreshold": 10,
+      "cooldownMs": 60000,
+      "timeout": 120000
+    }
+  ],
+  "errorMessage": {
+    "type": "Circuit breaker config must be an object",
+    "required": {
+      "enabled": "enabled field is required",
+      "failureThreshold": "failureThreshold field is required",
+      "cooldownMs": "cooldownMs field is required",
+      "timeout": "timeout field is required"
+    },
+    "properties": {
+      "enabled": "enabled must be a boolean",
+      "failureThreshold": "failureThreshold must be an integer between 1 and 100",
+      "cooldownMs": "cooldownMs must be an integer between 1000 (1s) and 300000 (5min)",
+      "timeout": "timeout must be an integer between 1000 (1s) and 300000 (5min)"
+    }
+  }
+}
