@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2025-11-14
+## [0.5.1] - 2025-11-14
+
+### Note
+This is the actual v0.5.0 release. The v0.5.0 version number was blocked by npm registry (likely due to a previous unpublished version), so we published as v0.5.1 instead. All features and changes listed below are identical to the intended v0.5.0 release.
+
+## [0.5.0] - 2025-11-14 [SKIPPED - npm version blocked]
 
 ### Added - Production Infrastructure (Phases 3-8)
 
