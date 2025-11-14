@@ -54,19 +54,65 @@ npm install -g code-executor-mcp
 
 ### 2. Configure
 
-Add to your `.mcp.json`:
+**IMPORTANT:** Code-executor reads `.mcp.json` to discover OTHER MCP servers. List ALL MCPs in the same file.
+
+Add to your `.mcp.json` (typically `~/.config/claude-code/mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "code-executor": {
-      "command": "code-executor-mcp"
+      "command": "npx",
+      "args": ["-y", "code-executor-mcp"],
+      "env": {
+        "MCP_CONFIG_PATH": "/full/path/to/this/.mcp.json",
+        "DENO_PATH": "/path/to/.deno/bin/deno"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp", "--headless"]
     }
   }
 }
 ```
 
-**Important:** Disable all other MCPs. Enable ONLY `code-executor`.
+**Configuration Guide:**
+- `MCP_CONFIG_PATH`: Full path to THIS file (so code-executor can read other MCPs)
+- `DENO_PATH`: Run `which deno` to find it (required for TypeScript execution)
+- **Other MCPs**: Add ALL MCP servers you want to use
+- **Connection Flow**: Claude Desktop → code-executor ONLY, then code-executor → all other MCPs
+
+**Quick Setup:**
+```bash
+# Find Deno path
+which deno
+
+# Find config path
+realpath ~/.config/claude-code/mcp.json
+
+# Update .mcp.json with these values
+```
+
+**Minimal (Python-only):**
+```json
+{
+  "mcpServers": {
+    "code-executor": {
+      "command": "npx",
+      "args": ["-y", "code-executor-mcp"],
+      "env": {
+        "MCP_CONFIG_PATH": "/path/to/.mcp.json",
+        "PYTHON_ENABLED": "true"
+      }
+    }
+  }
+}
+```
 
 ### 3. Use
 
@@ -250,22 +296,50 @@ npm run server
 
 ## Configuration
 
-Basic setup in `.mcp.json`:
+**Complete Example** (`.mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "code-executor": {
-      "command": "code-executor-mcp",
+      "command": "npx",
+      "args": ["-y", "code-executor-mcp"],
       "env": {
-        "MCP_CONFIG_PATH": "/path/to/.mcp.json"
+        "MCP_CONFIG_PATH": "/absolute/path/to/.mcp.json",
+        "DENO_PATH": "/home/user/.deno/bin/deno",
+        "ENABLE_AUDIT_LOG": "true",
+        "AUDIT_LOG_PATH": "/home/user/.code-executor/audit.log",
+        "ALLOWED_PROJECTS": "/home/user/projects:/tmp"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+    },
+    "zen": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/zen-mcp.git", "zen-mcp-server"],
+      "env": {
+        "GEMINI_API_KEY": "your-key-here"
       }
     }
   }
 }
 ```
 
-**Auto-discovery:** Reads other MCP servers from same config file.
+**Environment Variables:**
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `MCP_CONFIG_PATH` | ✅ Yes | Absolute path to `.mcp.json` | `/home/user/.config/claude-code/mcp.json` |
+| `DENO_PATH` | ✅ For TypeScript | Path to Deno binary | `/home/user/.deno/bin/deno` |
+| `ENABLE_AUDIT_LOG` | ⚠️ Recommended | Enable security audit logging | `true` |
+| `AUDIT_LOG_PATH` | No | Custom audit log location | `/var/log/code-executor/audit.log` |
+| `ALLOWED_PROJECTS` | ⚠️ Recommended | Restrict file access | `/home/user/projects:/tmp` |
+| `PYTHON_ENABLED` | No | Enable Python executor | `true` (default) |
+
+**Security Note:** Store API keys in environment variables, not directly in `.mcp.json`.
+
+**Auto-discovery:** Code-executor reads `MCP_CONFIG_PATH` to discover and connect to other MCP servers.
 
 ## TypeScript Support
 
