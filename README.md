@@ -54,9 +54,13 @@ npm install -g code-executor-mcp
 
 ### 2. Configure
 
-**IMPORTANT:** Code-executor reads `.mcp.json` to discover OTHER MCP servers. List ALL MCPs in the same file.
+**IMPORTANT:** Code-executor discovers and merges MCP servers from BOTH locations:
+- **Global:** `~/.claude.json` (cross-project MCPs like voice-mode, personal tools)
+- **Project:** `.mcp.json` (team-shared MCPs in your project root)
 
-Add to your `.mcp.json` (typically `~/.config/claude-code/mcp.json`):
+**Config Merging:** Global MCPs + Project MCPs = All available (project overrides global for duplicate names)
+
+Add to your **project** `.mcp.json` or **global** `~/.claude.json`:
 
 ```json
 {
@@ -82,20 +86,27 @@ Add to your `.mcp.json` (typically `~/.config/claude-code/mcp.json`):
 ```
 
 **Configuration Guide:**
-- `MCP_CONFIG_PATH`: Full path to THIS file (so code-executor can read other MCPs)
+- `MCP_CONFIG_PATH`: Optional - points to project `.mcp.json` (still discovers global `~/.claude.json`)
 - `DENO_PATH`: Run `which deno` to find it (required for TypeScript execution)
-- **Other MCPs**: Add ALL MCP servers you want to use
-- **Connection Flow**: Claude Desktop → code-executor ONLY, then code-executor → all other MCPs
+- **Global MCPs** (`~/.claude.json`): Personal servers available across all projects
+- **Project MCPs** (`.mcp.json`): Team-shared servers in version control
+- **Connection Flow**: Claude Code → code-executor ONLY, then code-executor → all other MCPs
 
 **Quick Setup:**
 ```bash
 # Find Deno path
 which deno
+# Output: /home/user/.deno/bin/deno
 
-# Find config path
-realpath ~/.config/claude-code/mcp.json
+# Project config (team-shared)
+realpath .mcp.json
+# Output: /home/user/projects/myproject/.mcp.json
 
-# Update .mcp.json with these values
+# Global config (personal)
+ls ~/.claude.json
+# Output: /home/user/.claude.json
+
+# Code-executor automatically merges both!
 ```
 
 **Minimal (Python-only):**
@@ -330,16 +341,21 @@ npm run server
 **Environment Variables:**
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
-| `MCP_CONFIG_PATH` | ✅ Yes | Absolute path to `.mcp.json` | `/home/user/.config/claude-code/mcp.json` |
+| `MCP_CONFIG_PATH` | ⚠️ Optional | Explicit path to project `.mcp.json` | `/home/user/projects/myproject/.mcp.json` |
 | `DENO_PATH` | ✅ For TypeScript | Path to Deno binary | `/home/user/.deno/bin/deno` |
 | `ENABLE_AUDIT_LOG` | ⚠️ Recommended | Enable security audit logging | `true` |
 | `AUDIT_LOG_PATH` | No | Custom audit log location | `/var/log/code-executor/audit.log` |
 | `ALLOWED_PROJECTS` | ⚠️ Recommended | Restrict file access | `/home/user/projects:/tmp` |
 | `PYTHON_ENABLED` | No | Enable Python executor | `true` (default) |
 
-**Security Note:** Store API keys in environment variables, not directly in `.mcp.json`.
+**Security Note:** Store API keys in environment variables, not directly in config files.
 
-**Auto-discovery:** Code-executor reads `MCP_CONFIG_PATH` to discover and connect to other MCP servers.
+**Auto-discovery (NEW in v0.7.3):** Code-executor automatically discovers and merges:
+- `~/.claude.json` (global/personal MCPs)
+- `.mcp.json` (project MCPs)
+- `MCP_CONFIG_PATH` if set (explicit override, still merges with global)
+
+**No configuration needed** - just add MCPs to either location and code-executor finds them all!
 
 ## TypeScript Support
 
@@ -390,7 +406,13 @@ See [SECURITY.md](SECURITY.md) for security model and threat analysis.
 ## FAQ
 
 **Q: Do I need to configure each MCP server?**
-A: No. Code-executor auto-discovers MCPs from your `.mcp.json`. Just disable them and enable only code-executor.
+A: No. Code-executor auto-discovers MCPs from `~/.claude.json` (global) AND `.mcp.json` (project). Just add MCPs to either location.
+
+**Q: How does global + project config merging work?**
+A: Code-executor finds and merges both:
+- Global (`~/.claude.json`): Personal MCPs available everywhere
+- Project (`.mcp.json`): Team MCPs in version control
+- Result: All MCPs available, project configs override global for duplicate names
 
 **Q: How does validation work?**
 A: AJV validates all tool calls against live schemas. On error, you get a detailed message showing expected parameters.
