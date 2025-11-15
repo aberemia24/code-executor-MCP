@@ -138,11 +138,13 @@ export async function executePythonInSandbox(
     // Spawn Python process
     const pythonProcess = spawn(getPythonPath(), pythonArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: {}, // SECURITY: Clear environment to prevent secret leakage (VULN-003)
       // Python doesn't have fine-grained permissions like Deno
       // Security is enforced by:
       // 1. Code pattern validation (security.ts)
-      // 2. File system access is limited to temp directory
-      // 3. Network access is limited to localhost (MCP proxy)
+      // 2. Environment isolation (env: {})
+      // 3. File system access is limited to temp directory
+      // 4. Network access is limited to localhost (MCP proxy)
     });
 
     // Collect output
