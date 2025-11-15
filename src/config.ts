@@ -139,6 +139,14 @@ export async function getMCPConfigPath(): Promise<string> {
 }
 
 /**
+ * Get ALL MCP configuration file paths (for merging global + project configs)
+ * Returns paths in priority order (lowest priority first)
+ */
+export async function getAllMCPConfigPaths(): Promise<string[]> {
+  return await configDiscovery.findAllMCPConfigs();
+}
+
+/**
  * Check if TypeScript execution is enabled
  */
 export function isTypeScriptEnabled(): boolean {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- 🔧 **Config Merging** - Now properly merges global (`~/.claude.json`) and project (`.mcp.json`) MCP configurations
+  - Previously: Only used first config found (project shadowed global)
+  - Now: Merges all configs with project taking precedence for conflicts
+  - Example: Global voice-mode + Project filesystem/zen = All 9 servers available
+  - Added `findAllMCPConfigs()` method to config discovery
+  - Updated `MCPClientPool.initialize()` to load and merge multiple configs
+
 ## [0.7.2] - 2025-11-15
 
 ### Added
