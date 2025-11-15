@@ -32,6 +32,8 @@ const CONFIG_SEARCH_PATHS = [
 const MCP_CONFIG_SEARCH_PATHS = [
   // Project level
   '.mcp.json',
+  // Claude Code global config (contains mcpServers field)
+  path.join(homedir(), '.claude.json'),
   // Claude Code default locations
   path.join(homedir(), '.config', 'claude-code', 'mcp.json'),
   // macOS

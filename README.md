@@ -68,6 +68,15 @@ Add to your `.mcp.json` (typically `~/.config/claude-code/mcp.json`):
         "MCP_CONFIG_PATH": "/full/path/to/this/.mcp.json",
         "DENO_PATH": "/path/to/.deno/bin/deno"
       }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp", "--headless"]
+    }
   }
 }
 ```

@@ -245,6 +245,26 @@ describe('ConfigDiscoveryService', () => {
       expect(mcpPath).toBe(path.resolve('./.mcp.json'));
     });
 
+    it('should_check_claude_json_global_location', async () => {
+      // No config files for findConfig() to load
+      vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
+
+      const claudeJsonPath = path.join(homedir(), '.claude.json');
+
+      // Mock fs.access for fileExists checks:
+      // 1. config.mcpConfigPath (.mcp.json from defaults) - doesn't exist
+      // 2. First search path (.mcp.json) - doesn't exist
+      // 3. Second search path (~/.claude.json) - exists
+      vi.mocked(fs.access)
+        .mockRejectedValueOnce(new Error('ENOENT')) // config.mcpConfigPath check
+        .mockRejectedValueOnce(new Error('ENOENT')) // .mcp.json search
+        .mockResolvedValueOnce(undefined); // ~/.claude.json exists
+
+      const mcpPath = await service.findMCPConfig();
+
+      expect(mcpPath).toBe(path.resolve(claudeJsonPath));
+    });
+
     it('should_check_claude_code_default_location', async () => {
       // No config files for findConfig() to load
       vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
@@ -259,10 +279,12 @@ describe('ConfigDiscoveryService', () => {
       // Mock fs.access for fileExists checks:
       // 1. config.mcpConfigPath (.mcp.json from defaults) - doesn't exist
       // 2. First search path (.mcp.json) - doesn't exist
-      // 3. Second search path (claude-code) - exists
+      // 3. Second search path (~/.claude.json) - doesn't exist
+      // 4. Third search path (claude-code) - exists
       vi.mocked(fs.access)
         .mockRejectedValueOnce(new Error('ENOENT')) // config.mcpConfigPath check
         .mockRejectedValueOnce(new Error('ENOENT')) // .mcp.json search
+        .mockRejectedValueOnce(new Error('ENOENT')) // ~/.claude.json search
         .mockResolvedValueOnce(undefined); // claude-code location exists
 
       const mcpPath = await service.findMCPConfig();

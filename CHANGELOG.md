@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- 🔍 **Global MCP Configuration Support** - Added `~/.claude.json` to MCP config search paths
+  - Now searches `~/.claude.json` for global MCP server configurations
+  - Search order: `.mcp.json` (project) → `~/.claude.json` (global) → `~/.config/claude-code/mcp.json` → macOS locations
+  - Enables discovery of globally configured MCP servers in Claude Code's settings file
+  - Backward compatible with existing configurations
+
 ## [0.7.1] - 2025-11-14
 
 ### Fixed
