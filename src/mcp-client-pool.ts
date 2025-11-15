@@ -107,15 +107,22 @@ export class MCPClientPool implements IToolSchemaProvider {
       const { getAllMCPConfigPaths } = await import('./config.js');
       let configPaths: string[];
 
+      // DEBUG: Log what configPath was passed
+      console.error(`DEBUG: configPath parameter = ${configPath || 'undefined'}`);
+      console.error(`DEBUG: process.env.MCP_CONFIG_PATH = ${process.env.MCP_CONFIG_PATH || 'undefined'}`);
+
       if (configPath) {
         // Explicit path provided via MCP_CONFIG_PATH
         // Still discover and merge with global configs, but use explicit path as highest priority
         const allPaths = await getAllMCPConfigPaths();
+        console.error(`DEBUG: getAllMCPConfigPaths() found ${allPaths.length} paths:`, allPaths);
         // Put explicit path last so it has highest priority
         configPaths = allPaths.filter(p => p !== configPath).concat([configPath]);
+        console.error(`DEBUG: After filter+concat, configPaths:`, configPaths);
       } else {
         // No explicit path, discover all configs
         configPaths = await getAllMCPConfigPaths();
+        console.error(`DEBUG: No explicit path, getAllMCPConfigPaths() returned:`, configPaths);
       }
 
       if (configPaths.length === 0) {

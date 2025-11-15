@@ -93,12 +93,9 @@ export class ConfigDiscoveryService {
   async findAllMCPConfigs(): Promise<string[]> {
     const foundPaths: string[] = [];
 
-    // Check explicit override (highest priority - returned last)
+    // Check explicit override (highest priority - will be added last)
     const explicitPath = process.env.MCP_CONFIG_PATH;
-    if (explicitPath && await this.fileExists(explicitPath)) {
-      foundPaths.push(path.resolve(explicitPath));
-      return foundPaths; // Explicit override means ignore all others
-    }
+    const hasExplicitPath = explicitPath && await this.fileExists(explicitPath);
 
     // Check config file's mcpConfigPath (second highest priority)
     const config = await this.findConfig();
@@ -112,8 +109,11 @@ export class ConfigDiscoveryService {
 
       const resolvedPath = path.resolve(searchPath);
 
-      // Skip if this is the same as configMcpPath (avoid duplicates)
+      // Skip if this is the same as configMcpPath or explicitPath (avoid duplicates)
       if (configMcpPath && path.resolve(configMcpPath) === resolvedPath) {
+        continue;
+      }
+      if (hasExplicitPath && path.resolve(explicitPath) === resolvedPath) {
         continue;
       }
 
@@ -122,9 +122,17 @@ export class ConfigDiscoveryService {
       }
     }
 
-    // Add configMcpPath last (highest priority after explicit override)
+    // Add configMcpPath second-to-last (if different from explicit path)
     if (configMcpPath && await this.fileExists(configMcpPath)) {
-      foundPaths.push(path.resolve(configMcpPath));
+      const resolvedConfigPath = path.resolve(configMcpPath);
+      if (!hasExplicitPath || path.resolve(explicitPath) !== resolvedConfigPath) {
+        foundPaths.push(resolvedConfigPath);
+      }
+    }
+
+    // Add explicit path LAST (highest priority)
+    if (hasExplicitPath) {
+      foundPaths.push(path.resolve(explicitPath));
     }
 
     return foundPaths;
