@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- 🧪 **Test Isolation Fix** - Fixed config test failure caused by `.code-executor.json` override
+  - **Issue**: `skip-dangerous-pattern-check.test.ts` failing because project config file has `skipDangerousPatternCheck: true`
+  - **Root Cause**: Test deleted env var but didn't override config file setting
+  - **Fix**: Explicitly set `CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS='false'` in default test to override config file (env var takes precedence)
+  - **Impact**: 100% test pass rate (689/689 non-skipped tests)
+  - **Files**: `tests/skip-dangerous-pattern-check.test.ts` (1 line change)
+
 - 🛡️ **Type-Safe Error Handling (TYPE-001)** - Replaced unsafe error casts with runtime type guards
   - **Issue**: [#43](https://github.com/aberemia24/code-executor-MCP/issues/43)
   - **Root Cause**: Multiple files used unsafe error type casting (`error as Error`, `error as NodeJS.ErrnoException`) without runtime type guards, violating TypeScript strict mode best practices
