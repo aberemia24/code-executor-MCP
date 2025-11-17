@@ -9,9 +9,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
-import { getMCPConfigPath } from './config.js';
-import { isValidMCPToolName, normalizeError } from './utils.js';
+import { getMCPConfigPath, getPoolConfig } from './config.js';
+import { isValidMCPToolName, normalizeError, isErrnoException } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
 import type { IToolSchemaProvider, CachedToolSchema } from './types.js';
@@ -68,7 +69,9 @@ export class MCPClientPool implements IToolSchemaProvider {
   private maxConcurrent: number;
   private activeConcurrent = 0;
   private connectionQueue: ConnectionQueue;
+  private queueTimeoutMs: number;
   private metricsExporter?: MetricsExporter;
+  private queueSlotEmitter: EventEmitter = new EventEmitter();
 
   /**
    * Constructor (US4: FR-4 Integration)
@@ -77,15 +80,27 @@ export class MCPClientPool implements IToolSchemaProvider {
    * @param metricsExporter - Optional metrics exporter for recording pool metrics
    */
   constructor(config?: MCPClientPoolConfig, metricsExporter?: MetricsExporter) {
+    // SEC-002: Use Zod-validated config instead of direct process.env access
+    // This prevents NaN from parseInt(), enforces bounds, and provides type safety
+    const poolConfig = getPoolConfig();
+
     // T053: Configurable concurrency limit (default: 100)
-    // Env var: POOL_MAX_CONCURRENT
-    this.maxConcurrent = config?.maxConcurrent ?? parseInt(process.env.POOL_MAX_CONCURRENT ?? '100', 10);
+    // Priority: Explicit config > Environment variable > Default
+    this.maxConcurrent = config?.maxConcurrent ?? poolConfig.maxConcurrent;
+
+    // T053: Store queue timeout for waitForQueueSlot
+    this.queueTimeoutMs = config?.queueTimeoutMs ?? poolConfig.queueTimeoutMs;
 
     // T053: Initialize connection queue
     this.connectionQueue = new ConnectionQueue({
-      maxSize: config?.queueSize ?? parseInt(process.env.POOL_QUEUE_SIZE ?? '200', 10),
-      timeoutMs: config?.queueTimeoutMs ?? parseInt(process.env.POOL_QUEUE_TIMEOUT_MS ?? '30000', 10),
+      maxSize: config?.queueSize ?? poolConfig.queueSize,
+      timeoutMs: this.queueTimeoutMs,
     });
+
+    // WHY: Set max listeners to match queue size to prevent EventEmitter warnings
+    // Node.js default is 10 listeners per event. With large queues (200+ requests),
+    // we could exceed this and get false-positive warnings. Set to queue size as upper bound.
+    this.queueSlotEmitter.setMaxListeners(config?.queueSize ?? poolConfig.queueSize);
 
     // T054: Optional metrics exporter for recording pool metrics
     this.metricsExporter = metricsExporter;
@@ -151,7 +166,9 @@ export class MCPClientPool implements IToolSchemaProvider {
             // Merge mcpServers (later configs override earlier)
             Object.assign(mergedServers, parsedConfig.mcpServers || {});
           } catch (error) {
-            console.error(`⚠️  Failed to load config ${configPath}:`, error instanceof Error ? error.message : String(error));
+            // TYPE-001 fix: Use normalizeError for consistency
+            const err = normalizeError(error);
+            console.error(`⚠️  Failed to load config ${configPath}:`, err.message);
           }
         }
 
@@ -416,9 +433,9 @@ export class MCPClientPool implements IToolSchemaProvider {
         }
       } catch (error) {
         // Queue full or timeout - return 503
-        throw new Error(
-          `Service Unavailable: ${(error as Error).message || 'Connection pool queue exhausted'}`
-        );
+        // TYPE-001 fix: Use normalizeError instead of unsafe cast
+        const err = normalizeError(error);
+        throw new Error(`Service Unavailable: ${err.message}`);
       }
     }
 
@@ -472,41 +489,64 @@ export class MCPClientPool implements IToolSchemaProvider {
   /**
    * Wait for queue slot to become available (T053)
    *
-   * Polls the queue until this request is dequeued or timeout occurs.
+   * Event-driven waiting for queue slot notification.
+   * Uses EventEmitter to avoid polling overhead and FIFO violations.
+   *
+   * **WHY Event-Driven vs Polling?**
+   * - No CPU waste from polling loops
+   * - Preserves FIFO ordering (no re-enqueuing)
+   * - Explicit timeout protection
+   * - No memory leaks from accumulated timers
    *
    * @param requestId - Request ID to wait for
    * @private
+   * @throws {Error} If timeout occurs (30s)
    */
   private async waitForQueueSlot(requestId: string): Promise<void> {
-    // Poll every 100ms until dequeued
-    while (true) {
-      const nextRequest = await this.connectionQueue.dequeue();
+    return new Promise<void>((resolve, reject) => {
+      // WHY: Register event listener FIRST before setting timeout
+      // This prevents a theoretical race where the event could be emitted
+      // after timeout is set but before listener is registered, causing a missed notification.
+      // Event handler for queue slot notification
+      const handler = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
 
-      if (nextRequest && nextRequest.requestId === requestId) {
-        // Our request dequeued, proceed
-        return;
-      }
+      // Wait for slot notification event
+      this.queueSlotEmitter.once(`slot-${requestId}`, handler);
 
-      if (nextRequest && nextRequest.requestId !== requestId) {
-        // Different request dequeued, re-enqueue it
-        await this.connectionQueue.enqueue(nextRequest);
-      }
-
-      // Wait 100ms before next poll
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+      // Set timeout to prevent indefinite waiting (matches queue timeout)
+      // Registered after listener to ensure we don't miss the event
+      const timeout = setTimeout(() => {
+        // Remove event listener to prevent memory leak
+        this.queueSlotEmitter.off(`slot-${requestId}`, handler);
+        reject(new Error(`Queue timeout: Request ${requestId} not processed within ${this.queueTimeoutMs}ms`));
+      }, this.queueTimeoutMs);
+    });
   }
 
   /**
    * Process next queued request (T053)
    *
    * Called after a slot is freed to trigger processing of waiting requests.
+   * Emits event to notify waiting request that slot is available.
+   *
+   * **WHY Event Emission Here?**
+   * - Happens in finally block when slot freed
+   * - Notifies exactly one waiting request (preserves FIFO)
+   * - No re-enqueuing = maintains queue order
    *
    * @private
    */
   private async processNextQueuedRequest(): Promise<void> {
-    // Dequeue next request (triggers waitForQueueSlot to resolve)
-    await this.connectionQueue.dequeue();
+    // Dequeue next request and emit slot notification
+    const nextRequest = await this.connectionQueue.dequeue();
+
+    if (nextRequest) {
+      // Emit event to unblock waiting request
+      this.queueSlotEmitter.emit(`slot-${nextRequest.requestId}`);
+    }
 
     // Update queue depth metric
     const stats = this.connectionQueue.getStats();
@@ -694,8 +734,9 @@ export class MCPClientPool implements IToolSchemaProvider {
               console.error(`✓ ${serverName} (PID ${pid}) exited gracefully`);
             }
           } catch (error) {
-            // Process might already be dead, safe to ignore
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+            // Process might already be dead, safe to ignore ESRCH (No such process)
+            // TYPE-001 fix: Use isErrnoException type guard instead of unsafe cast
+            if (!isErrnoException(error) || error.code !== 'ESRCH') {
               console.error(`Error killing ${serverName} (PID ${pid}):`, error);
             }
           }
@@ -712,5 +753,22 @@ export class MCPClientPool implements IToolSchemaProvider {
     this.toolCache.clear();
     this.processes.clear();
     this.initialized = false;
+
+    // WHY: Remove all pending event listeners to prevent memory leaks
+    // During shutdown, there may be queued requests still waiting for slot notifications.
+    // Removing listeners ensures clean shutdown without dangling event handlers.
+    this.queueSlotEmitter.removeAllListeners();
+  }
+
+  /**
+   * Alias for disconnect() - for backward compatibility with tests
+   *
+   * **WHY Alias?**
+   * - Test suite expects shutdown() method
+   * - disconnect() is the canonical implementation
+   * - Alias provides backward compatibility without duplication
+   */
+  async shutdown(): Promise<void> {
+    return this.disconnect();
   }
 }

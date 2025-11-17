@@ -15,6 +15,7 @@
 import type { IToolSchemaProvider, CachedToolSchema } from './types.js';
 import type { ICacheProvider } from './cache-provider.js';
 import { LRUCacheProvider } from './lru-cache-provider.js';
+import { normalizeError, isErrnoException } from './utils.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -89,8 +90,10 @@ export class SchemaCache {
       }
     } catch (error) {
       // File doesn't exist or is corrupted - not an error, just start fresh
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error('⚠️  Failed to load schema cache from disk:', (error as Error).message);
+      // TYPE-001 fix: Use isErrnoException type guard instead of unsafe cast
+      if (!isErrnoException(error) || error.code !== 'ENOENT') {
+        const err = normalizeError(error);
+        console.error('⚠️  Failed to load schema cache from disk:', err.message);
       }
     }
   }
@@ -113,13 +116,17 @@ export class SchemaCache {
         try {
           jsonPayload = JSON.stringify(cacheObject, null, 2);
         } catch (serializationError) {
-          console.error('⚠️  Failed to serialize schema cache (circular reference or BigInt?):', (serializationError as Error).message);
+          // TYPE-001 fix: Use normalizeError instead of unsafe cast
+          const err = normalizeError(serializationError);
+          console.error('⚠️  Failed to serialize schema cache (circular reference or BigInt?):', err.message);
           throw serializationError; // Re-throw to be caught by outer catch
         }
 
         await fs.writeFile(this.cachePath, jsonPayload, 'utf-8');
       } catch (error) {
-        console.error('⚠️  Failed to save schema cache to disk:', (error as Error).message);
+        // TYPE-001 fix: Use normalizeError instead of unsafe cast
+        const err = normalizeError(error);
+        console.error('⚠️  Failed to save schema cache to disk:', err.message);
       }
     });
   }

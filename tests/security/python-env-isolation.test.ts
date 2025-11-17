@@ -42,6 +42,10 @@ print(f'has_db:{has_db}')`,
   }, 10000);
 
   it('should not inherit AWS credentials from parent process', async () => {
+    // Save original values for restoration
+    const originalAwsKey = process.env.AWS_ACCESS_KEY_ID;
+    const originalAwsSecret = process.env.AWS_SECRET_ACCESS_KEY;
+
     // Set fake AWS credentials in parent process
     process.env.AWS_ACCESS_KEY_ID = 'FAKE_KEY_FOR_TEST';
     process.env.AWS_SECRET_ACCESS_KEY = 'FAKE_SECRET_FOR_TEST';
@@ -63,12 +67,23 @@ print(os.environ.get('AWS_SECRET_ACCESS_KEY', 'NOT_FOUND'))`,
     expect(result.output).not.toContain('FAKE_KEY_FOR_TEST');
     expect(result.output).not.toContain('FAKE_SECRET_FOR_TEST');
 
-    // Clean up
-    delete process.env.AWS_ACCESS_KEY_ID;
-    delete process.env.AWS_SECRET_ACCESS_KEY;
+    // Restore original values
+    if (originalAwsKey !== undefined) {
+      process.env.AWS_ACCESS_KEY_ID = originalAwsKey;
+    } else {
+      delete process.env.AWS_ACCESS_KEY_ID;
+    }
+    if (originalAwsSecret !== undefined) {
+      process.env.AWS_SECRET_ACCESS_KEY = originalAwsSecret;
+    } else {
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+    }
   }, 10000);
 
   it('should not leak DATABASE_URL from parent process', async () => {
+    // Save original value for restoration
+    const originalDatabaseUrl = process.env.DATABASE_URL;
+
     process.env.DATABASE_URL = 'postgresql://user:password@localhost/db';
 
     const result = await executePythonInSandbox(
@@ -88,8 +103,12 @@ print(db_url)`,
     expect(result.output).not.toContain('postgresql');
     expect(result.output).not.toContain('password');
 
-    // Clean up
-    delete process.env.DATABASE_URL;
+    // Restore original value
+    if (originalDatabaseUrl !== undefined) {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    } else {
+      delete process.env.DATABASE_URL;
+    }
   }, 10000);
 });
 

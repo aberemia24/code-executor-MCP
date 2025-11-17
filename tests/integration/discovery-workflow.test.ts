@@ -72,6 +72,17 @@ describe('Discovery + Execution Workflow Integration (US6)', () => {
           parameters: t.inputSchema
         }))
       ),
+      getToolSchema: vi.fn().mockImplementation((toolName) => {
+        // Mock getToolSchema for SchemaCache.fetchAndCacheSchema()
+        const tool = toolSchemas.find(t => t.name === toolName);
+        if (!tool) return Promise.resolve(null);
+
+        return Promise.resolve({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema
+        });
+      }),
       callTool: vi.fn().mockImplementation((toolName, params) => {
         // Mock tool execution based on tool name
         if (toolName === 'mcp__filesystem__read_file') {

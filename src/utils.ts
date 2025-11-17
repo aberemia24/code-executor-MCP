@@ -28,14 +28,15 @@ export function hashCode(code: string): string {
 }
 
 /**
- * Format error response with actionable message
+ * Format error response with actionable message (TYPE-001 fix)
  */
 export function formatErrorResponse(
   error: unknown,
   errorType: ErrorType,
   suggestion?: string
 ): ErrorResponse {
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  // Use isError() type guard instead of instanceof
+  const errorMessage = isError(error) ? error.message : String(error);
 
   return {
     error: errorMessage,
@@ -212,6 +213,72 @@ export function sanitizeOutput(output: string): string {
 }
 
 /**
+ * Type guard to check if value is an Error instance (TYPE-001 fix)
+ *
+ * WHY: Safer than `(error as Error)` which bypasses type safety
+ *
+ * @param e - Unknown value to check
+ * @returns True if value is Error instance
+ *
+ * @example
+ * ```typescript
+ * catch (error: unknown) {
+ *   if (isError(error)) {
+ *     console.log(error.message); // ✅ Type-safe
+ *   }
+ * }
+ * ```
+ */
+export function isError(e: unknown): e is Error {
+  return e instanceof Error;
+}
+
+/**
+ * Type guard to check if value is a Node.js ErrnoException (TYPE-001 fix)
+ *
+ * WHY: File system errors have `code` property (e.g., 'ENOENT')
+ * that we need to check safely without casting
+ *
+ * @param e - Unknown value to check
+ * @returns True if value has ErrnoException structure
+ *
+ * @example
+ * ```typescript
+ * catch (error: unknown) {
+ *   if (isErrnoException(error) && error.code === 'ENOENT') {
+ *     // Handle missing file gracefully
+ *   }
+ * }
+ * ```
+ */
+export function isErrnoException(e: unknown): e is NodeJS.ErrnoException {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'code' in e &&
+    typeof (e as { code: unknown }).code === 'string'
+  );
+}
+
+/**
+ * Normalize unknown error to Error (TYPE-001 fix)
+ *
+ * WHY: JavaScript allows throwing any type (string, number, object).
+ * This function ensures we always have an Error with stack trace.
+ *
+ * @param error - Unknown thrown value
+ * @returns Error instance (original if already Error, wrapped otherwise)
+ *
+ * @example
+ * ```typescript
+ * catch (error: unknown) {
+ *   const err = normalizeError(error);
+ *   console.error(err.message, err.stack); // ✅ Always available
+ * }
+ * ```
+ */
+export function normalizeError(error: unknown): Error;
+/**
  * Normalize unknown error to Error with context
  *
  * DRY utility to avoid duplicating error normalization across the codebase.
@@ -220,7 +287,35 @@ export function sanitizeOutput(output: string): string {
  * @param context - Contextual prefix for the error message
  * @returns Normalized Error object with context
  */
-export function normalizeError(error: unknown, context: string): Error {
-  const message = error instanceof Error ? error.message : String(error);
-  return new Error(`${context}: ${message}`);
+export function normalizeError(error: unknown, context: string): Error;
+export function normalizeError(error: unknown, context?: string): Error {
+  // If already Error, return as-is or with context
+  if (isError(error)) {
+    return context ? new Error(`${context}: ${error.message}`) : error;
+  }
+
+  // String: Wrap in Error
+  if (typeof error === 'string') {
+    const message = context ? `${context}: ${error}` : error;
+    return new Error(message);
+  }
+
+  // Object: Serialize to JSON (handles circular refs gracefully)
+  if (typeof error === 'object' && error !== null) {
+    try {
+      const serialized = JSON.stringify(error);
+      const message = context ? `${context}: ${serialized}` : serialized;
+      return new Error(message);
+    } catch {
+      // Circular reference or BigInt - fallback to toString
+      const stringified = String(error);
+      const message = context ? `${context}: ${stringified}` : stringified;
+      return new Error(message);
+    }
+  }
+
+  // Primitive types (number, boolean, null, undefined, symbol)
+  const stringified = String(error);
+  const message = context ? `${context}: ${stringified}` : stringified;
+  return new Error(message);
 }

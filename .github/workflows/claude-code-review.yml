@@ -35,9 +35,9 @@ jobs:
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          # Use GitHub token for authentication (fallback if CLAUDE_CODE_OAUTH_TOKEN not set)
+          # Use GitHub token for authentication
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}

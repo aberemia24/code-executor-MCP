@@ -21,6 +21,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import AsyncLock from 'async-lock';
 import { z } from 'zod';
+import { normalizeError } from './utils.js';
 import type { IAuditLogger, AuditLogEntry } from './interfaces/audit-logger.js';
 
 /**
@@ -136,9 +137,9 @@ export class AuditLogger implements IAuditLogger {
     try {
       await fs.mkdir(this.logDir, { recursive: true });
     } catch (error) {
-      throw new Error(
-        `Failed to create audit log directory ${this.logDir}: ${error instanceof Error ? error.message : String(error)}`
-      );
+      // TYPE-001 fix: Use normalizeError for consistency
+      const err = normalizeError(error);
+      throw new Error(`Failed to create audit log directory ${this.logDir}: ${err.message}`);
     }
   }
 
@@ -170,9 +171,9 @@ export class AuditLogger implements IAuditLogger {
       try {
         await fs.appendFile(logPath, jsonLine, 'utf-8');
       } catch (error) {
-        throw new Error(
-          `Failed to write audit log entry: ${error instanceof Error ? error.message : String(error)}`
-        );
+        // TYPE-001 fix: Use normalizeError for consistency
+        const err = normalizeError(error);
+        throw new Error(`Failed to write audit log entry: ${err.message}`);
       }
     });
   }
@@ -269,9 +270,9 @@ export class AuditLogger implements IAuditLogger {
         }
       }
     } catch (error) {
-      throw new Error(
-        `Failed to cleanup old audit logs: ${error instanceof Error ? error.message : String(error)}`
-      );
+      // TYPE-001 fix: Use normalizeError for consistency
+      const err = normalizeError(error);
+      throw new Error(`Failed to cleanup old audit logs: ${err.message}`);
     }
   }
 }

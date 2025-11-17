@@ -23,7 +23,11 @@ describe('shouldSkipDangerousPatternCheck', () => {
   });
 
   it('should_return_false_by_default', async () => {
-    // No env var, no config file with skipDangerousPatternCheck
+    // Explicitly set env var to 'false' to override any config file settings
+    // (Project has .code-executor.json with skipDangerousPatternCheck: true)
+    process.env.CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS = 'false';
+    await initConfig();
+
     const result = shouldSkipDangerousPatternCheck();
 
     expect(result).toBe(false);

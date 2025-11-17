@@ -246,7 +246,8 @@ describe('normalizeError', () => {
     const normalized = normalizeError({ custom: 'error' }, 'Operation failed');
 
     expect(normalized).toBeInstanceOf(Error);
-    expect(normalized.message).toBe('Operation failed: [object Object]');
+    // TYPE-001 fix: normalizeError now JSON.stringify's objects instead of toString()
+    expect(normalized.message).toBe('Operation failed: {"custom":"error"}');
   });
 
   it('should_handle_null_and_undefined', () => {

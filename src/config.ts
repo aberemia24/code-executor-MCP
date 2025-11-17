@@ -9,6 +9,7 @@
 
 import { configDiscovery } from './config-discovery.js';
 import type { Config } from './config-types.js';
+import { PoolConfigSchema, type PoolConfig } from './config-types.js';
 
 /**
  * Global configuration instance
@@ -199,6 +200,38 @@ export function shouldSkipDangerousPatternCheck(): boolean {
 
   // Fall back to config file
   return getConfig().security?.skipDangerousPatternCheck ?? false;
+}
+
+/**
+ * Get connection pool configuration from environment variables
+ *
+ * **WHY This Function?**
+ * - Replaces direct process.env access (violates coding standards)
+ * - Provides Zod validation for type safety
+ * - Prevents NaN from parseInt() with invalid input
+ * - Enforces bounds checking (1-1000 for concurrency/queue)
+ * - Self-documenting via schema
+ *
+ * **Environment Variables:**
+ * - POOL_MAX_CONCURRENT: Maximum concurrent requests (default: 100)
+ * - POOL_QUEUE_SIZE: Queue size when at capacity (default: 200)
+ * - POOL_QUEUE_TIMEOUT_MS: Queue timeout in ms (default: 30000)
+ *
+ * @returns Validated pool configuration with defaults
+ * @throws {z.ZodError} If environment variables are invalid (non-numeric, out of bounds)
+ */
+export function getPoolConfig(): PoolConfig {
+  return PoolConfigSchema.parse({
+    maxConcurrent: process.env.POOL_MAX_CONCURRENT
+      ? parseInt(process.env.POOL_MAX_CONCURRENT, 10)
+      : undefined,
+    queueSize: process.env.POOL_QUEUE_SIZE
+      ? parseInt(process.env.POOL_QUEUE_SIZE, 10)
+      : undefined,
+    queueTimeoutMs: process.env.POOL_QUEUE_TIMEOUT_MS
+      ? parseInt(process.env.POOL_QUEUE_TIMEOUT_MS, 10)
+      : undefined,
+  });
 }
 
 // For backward compatibility, export commonly used values

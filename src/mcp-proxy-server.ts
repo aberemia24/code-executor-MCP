@@ -16,6 +16,12 @@ import { MetricsExporter } from './metrics-exporter.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 import type { ToolCallSummaryEntry } from './types.js';
 
+// SMELL-001: Import handler classes
+import { MetricsRequestHandler } from './handlers/metrics-request-handler.js';
+import { HealthCheckHandler } from './handlers/health-check-handler.js';
+import { DiscoveryRequestHandler } from './handlers/discovery-request-handler.js';
+import { ToolExecutionHandler } from './handlers/tool-execution-handler.js';
+
 // Configuration constants
 const MAX_SEARCH_QUERY_LENGTH = 100; // Maximum characters allowed in search query (prevents DoS)
 
@@ -55,13 +61,16 @@ export class MCPProxyServer {
   private server: http.Server | null = null;
   private port = 0;
   private authToken: string;
-  private validator: AllowlistValidator;
+
+  // SMELL-001: Handler instances (SRP refactoring)
+  private metricsHandler: MetricsRequestHandler;
+  private healthHandler: HealthCheckHandler;
+  private discoveryHandler: DiscoveryRequestHandler;
+  private executionHandler: ToolExecutionHandler;
+
+  // Shared dependencies (still needed for start() and delegation)
   private tracker: ToolCallTracker;
   private schemaCache: SchemaCache;
-  private schemaValidator: SchemaValidator;
-  private rateLimiter: RateLimiter;
-  private metricsExporter: MetricsExporter;
-  private discoveryTimeoutMs: number;
 
   // P1: Request tracking for graceful shutdown
   private activeRequests = 0; // Track in-flight HTTP requests
@@ -84,21 +93,45 @@ export class MCPProxyServer {
     metricsExporter?: MetricsExporter,
     discoveryTimeoutMs: number = 500
   ) {
-    this.validator = new AllowlistValidator(allowedTools);
+    // SMELL-001 Refactoring: Create shared dependencies first
+    const validator = new AllowlistValidator(allowedTools);
     this.tracker = new ToolCallTracker();
     this.schemaCache = new SchemaCache(mcpClientPool);
-    this.schemaValidator = new SchemaValidator();
-    // Rate limiter (see constants at top for WHY these values)
-    this.rateLimiter = new RateLimiter({
+    const schemaValidator = new SchemaValidator();
+    const rateLimiter = new RateLimiter({
       maxRequests: RATE_LIMIT_MAX_REQUESTS,
       windowMs: RATE_LIMIT_WINDOW_MS,
     });
-    // Metrics exporter (default to new instance if not provided)
-    this.metricsExporter = metricsExporter || new MetricsExporter();
-    // Discovery timeout configuration
-    this.discoveryTimeoutMs = discoveryTimeoutMs;
-    // Generate cryptographically secure random token (32 bytes = 64 hex chars)
+    const metrics = metricsExporter || new MetricsExporter();
+
+    // Generate authentication token
     this.authToken = crypto.randomBytes(32).toString('hex');
+
+    // SMELL-001: Initialize handler instances (Dependency Injection pattern)
+    this.metricsHandler = new MetricsRequestHandler(metrics);
+
+    this.healthHandler = new HealthCheckHandler({
+      mcpClientPool,
+      metricsExporter: metrics,
+      schemaCache: this.schemaCache,
+    });
+
+    this.discoveryHandler = new DiscoveryRequestHandler({
+      mcpClientPool,
+      metricsExporter: metrics,
+      schemaCache: this.schemaCache,
+      rateLimiter,
+      discoveryTimeoutMs,
+    });
+
+    this.executionHandler = new ToolExecutionHandler({
+      mcpClientPool,
+      metricsExporter: metrics,
+      allowlistValidator: validator,
+      toolCallTracker: this.tracker,
+      schemaCache: this.schemaCache,
+      schemaValidator,
+    });
   }
 
   /**
@@ -130,25 +163,45 @@ export class MCPProxyServer {
             return;
           }
 
+          // SECURITY: Validate bearer token authentication (constant-time comparison)
+          const authHeader = req.headers['authorization'];
+          if (!this.validateBearerToken(authHeader)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: 'Unauthorized - invalid or missing authentication token',
+                hint: 'Provide Authorization: Bearer <token> header',
+              })
+            );
+            return;
+          }
+
           // Parse URL to route requests
           const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
           const pathname = url.pathname;
 
+          // SMELL-001: Route to handler instances (SRP delegation)
           // Route: GET /metrics → Prometheus metrics endpoint
           if (req.method === 'GET' && pathname === '/metrics') {
-            await this.handleMetricsRequest(req, res);
+            await this.metricsHandler.handle(req, res, this.authToken);
+            return;
+          }
+
+          // Route: GET /health → Health check endpoint (NEW)
+          if (req.method === 'GET' && pathname === '/health') {
+            await this.healthHandler.handle(req, res, this.authToken);
             return;
           }
 
           // Route: GET /mcp/tools → Discovery endpoint
           if (req.method === 'GET' && pathname === '/mcp/tools') {
-            await this.handleDiscoveryRequest(req, res);
+            await this.discoveryHandler.handle(req, res, this.authToken);
             return;
           }
 
-          // Route: POST / → Tool execution endpoint (existing)
+          // Route: POST / → Tool execution endpoint
           if (req.method === 'POST' && pathname === '/') {
-            await this.handleCallMCPTool(req, res);
+            await this.executionHandler.handle(req, res, this.authToken);
             return;
           }
 
@@ -160,6 +213,7 @@ export class MCPProxyServer {
               'POST / - Execute MCP tool',
               'GET /mcp/tools - Discover available tools',
               'GET /metrics - Prometheus metrics',
+              'GET /health - Health check',
             ],
           }));
         } finally {
@@ -294,17 +348,20 @@ export class MCPProxyServer {
   /**
    * Get list of all MCP tool calls made through this proxy
    *
+   * SMELL-001: Delegates to ToolExecutionHandler
    * Used for audit logging and tracking tool usage.
    */
   getToolCalls(): string[] {
-    return this.tracker.getCalls();
+    return this.executionHandler.getToolCalls();
   }
 
   /**
    * Get aggregated summary of tool invocations
+   *
+   * SMELL-001: Delegates to ToolExecutionHandler
    */
   getToolCallSummary(): ToolCallSummaryEntry[] {
-    return this.tracker.getSummary();
+    return this.executionHandler.getToolCallSummary();
   }
 
 
@@ -349,389 +406,4 @@ export class MCPProxyServer {
       // Any error (including length mismatch) returns false
       return false;
     }
-  }
-
-  /**
-   * Handle POST / - Call MCP Tool (existing functionality)
-   *
-   * SECURITY: Enforces allowlist validation (execution requires explicit permission)
-   */
-  private async handleCallMCPTool(
-    req: http.IncomingMessage,
-    res: http.ServerResponse
-  ): Promise<void> {
-    const startTime = process.hrtime.bigint();
-
-    // SECURITY: Validate bearer token authentication (constant-time comparison)
-    const authHeader = req.headers['authorization'];
-    if (!this.validateBearerToken(authHeader)) {
-      const duration = Number(process.hrtime.bigint() - startTime) / 1e9; // Convert to seconds
-      this.metricsExporter.recordHttpRequest('POST', 401);
-      this.metricsExporter.recordHttpDuration('POST', '/', duration);
-
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          error: 'Unauthorized - invalid or missing authentication token',
-        })
-      );
-      return;
-    }
-
-    try {
-      // Read request body
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(chunk as Buffer);
-      }
-      const body = Buffer.concat(chunks).toString();
-      const { toolName, params } = JSON.parse(body) as {
-        toolName: string;
-        params: unknown;
-      };
-
-      // Validate against allowlist
-      if (!this.validator.isAllowed(toolName)) {
-        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-        this.metricsExporter.recordHttpRequest('POST', 403);
-        this.metricsExporter.recordHttpDuration('POST', '/', duration);
-
-        const allowedTools = this.validator.getAllowedTools();
-        res.writeHead(403);
-        res.end(
-          JSON.stringify({
-            error: `Tool '${toolName}' not in allowlist`,
-            allowedTools:
-              allowedTools.length > 0
-                ? allowedTools
-                : ['(empty - no tools allowed)'],
-            suggestion: `Add '${toolName}' to allowedTools array`,
-          })
-        );
-        return;
-      }
-
-      // Validate parameters against schema
-      const schema = await this.schemaCache.getToolSchema(toolName);
-      if (schema) {
-        const validation = this.schemaValidator.validate(params, schema);
-        if (!validation.valid) {
-          const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-          this.metricsExporter.recordHttpRequest('POST', 400);
-          this.metricsExporter.recordHttpDuration('POST', '/', duration);
-
-          const errorMessage = this.schemaValidator.formatError(
-            toolName,
-            params,
-            schema,
-            validation
-          );
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: errorMessage }));
-          return;
-        }
-      }
-
-      const start = process.hrtime.bigint();
-      try {
-        // Call MCP tool through pool
-        const result = await this.mcpClientPool.callTool(toolName, params);
-
-        const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
-        this.tracker.track(toolName, {
-          durationMs,
-          status: 'success',
-        });
-
-        // Record successful request metrics
-        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-        this.metricsExporter.recordHttpRequest('POST', 200);
-        this.metricsExporter.recordHttpDuration('POST', '/', duration);
-
-        // Return result
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ result }));
-        return;
-      } catch (toolError) {
-        const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
-        const normalized = normalizeError(toolError, 'MCP tool call failed');
-
-        this.tracker.track(toolName, {
-          durationMs,
-          status: 'error',
-          errorMessage: normalized.message,
-        });
-
-        // Record error request metrics
-        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-        this.metricsExporter.recordHttpRequest('POST', 500);
-        this.metricsExporter.recordHttpDuration('POST', '/', duration);
-
-        res.writeHead(500);
-        res.end(
-          JSON.stringify({
-            error: normalized.message,
-          })
-        );
-        return;
-      }
-    } catch (error) {
-      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-      this.metricsExporter.recordHttpRequest('POST', 500);
-      this.metricsExporter.recordHttpDuration('POST', '/', duration);
-
-      res.writeHead(500);
-      res.end(
-        JSON.stringify({
-          error: normalizeError(error, 'MCP tool call failed').message,
-        })
-      );
-    }
-  }
-
-  /**
-   * Handle GET /mcp/tools - Discovery Endpoint
-   *
-   * SECURITY EXCEPTION (BY DESIGN - Constitutional Principle 2):
-   * This endpoint BYPASSES the allowlist to enable in-sandbox tool discovery.
-   *
-   * JUSTIFICATION (from spec.md Section 2):
-   * - Discovery returns READ-ONLY metadata (tool names, descriptions, parameters)
-   * - Execution (callMCPTool) STILL requires allowlist validation
-   * - Trade-off: Self-service discovery vs explicit permission model
-   * - Risk assessment: LOW (discovery ≠ execution, no side effects)
-   *
-   * See spec.md Section 2 "Constitutional Exceptions" for full rationale.
-   */
-  private async handleDiscoveryRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse
-  ): Promise<void> {
-    const startTime = process.hrtime.bigint();
-
-    try {
-      // SECURITY: Validate bearer token authentication
-      const authHeader = req.headers['authorization'];
-      if (!this.validateBearerToken(authHeader)) {
-        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-        this.metricsExporter.recordHttpRequest('GET', 401);
-        this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
-
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: 'Unauthorized - invalid or missing authentication token',
-          })
-        );
-        return;
-      }
-
-      // Rate limiting: Check limit for this client
-      // NOTE: Uses 'default' as client ID because each sandbox execution creates
-      // its own isolated MCPProxyServer instance. The proxy is single-client by design
-      // (only the sandbox process connects), so per-client tracking is unnecessary.
-      // Rate limit applies to the single sandbox execution, not across multiple clients.
-      const rateLimit = await this.rateLimiter.checkLimit('default');
-      if (!rateLimit.allowed) {
-        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-        this.metricsExporter.recordHttpRequest('GET', 429);
-        this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
-
-        res.writeHead(429, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: 'Rate limit exceeded',
-            retryAfter: Math.ceil(rateLimit.resetIn / 1000), // seconds
-            limit: 30,
-            window: '60s',
-          })
-        );
-        return;
-      }
-
-      // Parse query parameters from URL
-      const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
-      const searchParams = url.searchParams.getAll('q'); // Get all ?q= parameters
-
-      // Validate search queries
-      const validationError = this.validateSearchQuery(searchParams);
-      if (validationError) {
-        const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-        this.metricsExporter.recordHttpRequest('GET', 400);
-        this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
-
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(validationError));
-        return;
-      }
-
-      // Fetch all tool schemas from MCPClientPool with configured timeout
-      let timeoutHandle: NodeJS.Timeout | null = null;
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(
-          () => reject(new Error(`Request timeout after ${this.discoveryTimeoutMs}ms`)),
-          this.discoveryTimeoutMs
-        );
-      });
-
-      const toolsPromise = this.mcpClientPool.listAllToolSchemas(this.schemaCache);
-
-      let allTools;
-      try {
-        allTools = await Promise.race([toolsPromise, timeoutPromise]);
-      } finally {
-        // FIX: Clear timeout to prevent memory leaks (race condition)
-        // If toolsPromise resolves first, timeout would otherwise remain active
-        if (timeoutHandle) {
-          clearTimeout(timeoutHandle);
-        }
-      }
-
-      // Filter tools by search keywords (OR logic, case-insensitive)
-      const filteredTools = this.filterToolsByKeywords(allTools, searchParams);
-
-      // Audit log: Discovery request
-      console.error(JSON.stringify({
-        action: 'discovery',
-        endpoint: '/mcp/tools',
-        searchTerms: searchParams,
-        resultsCount: filteredTools.length,
-        clientId: 'default',
-        timestamp: new Date().toISOString(),
-      }));
-
-      // Record successful request metrics
-      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-      this.metricsExporter.recordHttpRequest('GET', 200);
-      this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
-
-      // Return JSON response with tool schemas
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          tools: filteredTools,
-        })
-      );
-    } catch (error) {
-      // Record error metrics
-      const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
-      this.metricsExporter.recordHttpRequest('GET', 500);
-      this.metricsExporter.recordHttpDuration('GET', '/mcp/tools', duration);
-
-      // Error handling
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          error: normalizeError(error, 'Discovery request failed').message,
-        })
-      );
-    }
-  }
-
-  /**
-   * Validate search query parameters (SRP helper)
-   *
-   * @param queries - Array of search query strings
-   * @returns Error object if validation fails, null if valid
-   */
-  private validateSearchQuery(queries: string[]): { error: string; query?: string } | null {
-    for (const query of queries) {
-      // Max length validation
-      if (query.length > MAX_SEARCH_QUERY_LENGTH) {
-        return {
-          error: `Search query too long (max ${MAX_SEARCH_QUERY_LENGTH} characters)`,
-          query,
-        };
-      }
-
-      // Allowed characters: alphanumeric, spaces, hyphens, underscores
-      const validPattern = /^[a-zA-Z0-9\s\-_]+$/;
-      if (!validPattern.test(query)) {
-        return {
-          error:
-            'Invalid characters in search query (allowed: alphanumeric, spaces, hyphens, underscores)',
-          query,
-        };
-      }
-    }
-
-    return null; // All queries valid
-  }
-
-  /**
-   * Filter tools by search keywords using OR logic (SRP helper)
-   *
-   * @param tools - Array of tool schemas to filter
-   * @param keywords - Array of search keywords
-   * @returns Filtered tools matching any keyword (case-insensitive)
-   */
-  private filterToolsByKeywords(
-    tools: Array<{ name: string; description: string; parameters: unknown }>,
-    keywords: string[]
-  ): Array<{ name: string; description: string; parameters: unknown }> {
-    // No keywords = return all tools
-    if (keywords.length === 0) {
-      return tools;
-    }
-
-    // Filter using OR logic: tool matches if ANY keyword is found
-    return tools.filter((tool) => {
-      const searchText = `${tool.name} ${tool.description}`.toLowerCase();
-      return keywords.some((keyword) => searchText.includes(keyword.toLowerCase()));
-    });
-  }
-
-  /**
-   * Handle GET /metrics - Prometheus Metrics Endpoint
-   *
-   * Returns Prometheus exposition format metrics for monitoring:
-   * - Cache metrics (hits/misses)
-   * - HTTP metrics (requests, duration)
-   * - Circuit breaker metrics (state)
-   * - Connection pool metrics (active connections, queue depth)
-   *
-   * SECURITY: Requires authentication by default. Metrics endpoints expose
-   * operational data that can be used for reconnaissance attacks.
-   *
-   * WHY: Information disclosure risk - metrics reveal:
-   * - Cache access patterns (schema usage profiling)
-   * - HTTP request rates (usage patterns, attack surface)
-   * - Circuit breaker states (MCP server availability)
-   * - Connection pool capacity (resource limits)
-   *
-   * CONSTITUTIONAL COMPLIANCE: Aligns with Principle 2 (Security Zero Tolerance)
-   */
-  private async handleMetricsRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse
-  ): Promise<void> {
-    // SECURITY: Validate bearer token authentication
-    const authHeader = req.headers['authorization'];
-    if (!this.validateBearerToken(authHeader)) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          error: 'Unauthorized - invalid or missing authentication token',
-          hint: 'Provide Authorization: Bearer <token> header',
-        })
-      );
-      return;
-    }
-
-    try {
-      const metrics = await this.metricsExporter.getMetrics();
-
-      // Return Prometheus text format
-      res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
-      res.end(metrics);
-    } catch (error) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          error: normalizeError(error, 'Metrics request failed').message,
-        })
-      );
-    }
-  }
-}
+  }}
