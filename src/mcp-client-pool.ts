@@ -742,4 +742,16 @@ export class MCPClientPool implements IToolSchemaProvider {
     this.processes.clear();
     this.initialized = false;
   }
+
+  /**
+   * Alias for disconnect() - for backward compatibility with tests
+   *
+   * **WHY Alias?**
+   * - Test suite expects shutdown() method
+   * - disconnect() is the canonical implementation
+   * - Alias provides backward compatibility without duplication
+   */
+  async shutdown(): Promise<void> {
+    return this.disconnect();
+  }
 }
