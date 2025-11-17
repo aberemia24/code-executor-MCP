@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- 🔧 **Environment Variable Validation (SEC-002)** - Replaced direct process.env access with Zod validation
+  - **Issue**: [#41](https://github.com/aberemia24/code-executor-MCP/issues/41)
+  - **Root Cause**: `MCPClientPool` constructor used direct `process.env.POOL_*` access with `parseInt()`
+  - **Impact**:
+    - Standards violation: `coding-standards.md` requires Zod validation for all env vars
+    - Type safety risk: `parseInt()` can return NaN with invalid input (no validation)
+    - No bounds checking: Could accept 0, negative, or excessive values (1M+)
+  - **Fix**: Zod-based configuration system
+    - Created `PoolConfigSchema` in `config-types.ts` with bounds validation
+    - Added `getPoolConfig()` function in `config.ts` for type-safe env var parsing
+    - Updated `MCPClientPool` constructor to use validated config
+    - Enforces constraints: maxConcurrent (1-1000), queueSize (1-1000), timeoutMs (1s-5min)
+  - **Benefits**:
+    - ✅ Prevents NaN bugs from invalid environment variables
+    - ✅ Enforces bounds checking (no invalid values)
+    - ✅ Self-documenting configuration schema
+    - ✅ Type-safe parsing (numbers, not strings)
+    - ✅ Complies with project coding standards
+  - **Files**: `src/config-types.ts` (+28), `src/config.ts` (+33), `src/mcp-client-pool.ts` (refactored constructor)
+  - **Tests**: 25 comprehensive validation tests (all passing)
+
 - 🔒 **CRITICAL: Race Condition in Queue Polling Loop (SEC-001)** - Replaced polling with event-driven pattern
   - **Issue**: [#40](https://github.com/aberemia24/code-executor-MCP/issues/40)
   - **Root Cause**: `waitForQueueSlot()` used infinite `while(true)` loop with 100ms polling

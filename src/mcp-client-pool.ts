@@ -11,7 +11,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
-import { getMCPConfigPath } from './config.js';
+import { getMCPConfigPath, getPoolConfig } from './config.js';
 import { isValidMCPToolName, normalizeError } from './utils.js';
 import type { MCPConfig, MCPServerConfig, ToolInfo, ProcessInfo, StdioServerConfig, HttpServerConfig } from './types.js';
 import { isStdioConfig, isHttpConfig } from './types.js';
@@ -80,16 +80,20 @@ export class MCPClientPool implements IToolSchemaProvider {
    * @param metricsExporter - Optional metrics exporter for recording pool metrics
    */
   constructor(config?: MCPClientPoolConfig, metricsExporter?: MetricsExporter) {
+    // SEC-002: Use Zod-validated config instead of direct process.env access
+    // This prevents NaN from parseInt(), enforces bounds, and provides type safety
+    const poolConfig = getPoolConfig();
+
     // T053: Configurable concurrency limit (default: 100)
-    // Env var: POOL_MAX_CONCURRENT
-    this.maxConcurrent = config?.maxConcurrent ?? parseInt(process.env.POOL_MAX_CONCURRENT ?? '100', 10);
+    // Priority: Explicit config > Environment variable > Default
+    this.maxConcurrent = config?.maxConcurrent ?? poolConfig.maxConcurrent;
 
     // T053: Store queue timeout for waitForQueueSlot
-    this.queueTimeoutMs = config?.queueTimeoutMs ?? parseInt(process.env.POOL_QUEUE_TIMEOUT_MS ?? '30000', 10);
+    this.queueTimeoutMs = config?.queueTimeoutMs ?? poolConfig.queueTimeoutMs;
 
     // T053: Initialize connection queue
     this.connectionQueue = new ConnectionQueue({
-      maxSize: config?.queueSize ?? parseInt(process.env.POOL_QUEUE_SIZE ?? '200', 10),
+      maxSize: config?.queueSize ?? poolConfig.queueSize,
       timeoutMs: this.queueTimeoutMs,
     });
 
