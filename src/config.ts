@@ -10,6 +10,7 @@
 import { configDiscovery } from './config-discovery.js';
 import type { Config } from './config-types.js';
 import { PoolConfigSchema, type PoolConfig } from './config-types.js';
+import { z } from 'zod';
 
 /**
  * Global configuration instance
@@ -221,17 +222,42 @@ export function shouldSkipDangerousPatternCheck(): boolean {
  * @throws {z.ZodError} If environment variables are invalid (non-numeric, out of bounds)
  */
 export function getPoolConfig(): PoolConfig {
-  return PoolConfigSchema.parse({
-    maxConcurrent: process.env.POOL_MAX_CONCURRENT
-      ? parseInt(process.env.POOL_MAX_CONCURRENT, 10)
-      : undefined,
-    queueSize: process.env.POOL_QUEUE_SIZE
-      ? parseInt(process.env.POOL_QUEUE_SIZE, 10)
-      : undefined,
-    queueTimeoutMs: process.env.POOL_QUEUE_TIMEOUT_MS
-      ? parseInt(process.env.POOL_QUEUE_TIMEOUT_MS, 10)
-      : undefined,
-  });
+  // WHY: Helper to safely parse integers with explicit NaN detection
+  // parseInt('invalid') returns NaN, which can cause subtle bugs downstream.
+  // This helper provides clear error messages upfront before Zod validation.
+  const parseEnvInt = (value: string | undefined, name: string): number | undefined => {
+    if (!value) return undefined;
+
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) {
+      throw new Error(
+        `Invalid numeric value for ${name}: "${value}". ` +
+        `Expected a valid integer (1-1000 for maxConcurrent/queueSize, 1000-300000 for queueTimeoutMs).`
+      );
+    }
+    return parsed;
+  };
+
+  try {
+    return PoolConfigSchema.parse({
+      maxConcurrent: parseEnvInt(process.env.POOL_MAX_CONCURRENT, 'POOL_MAX_CONCURRENT'),
+      queueSize: parseEnvInt(process.env.POOL_QUEUE_SIZE, 'POOL_QUEUE_SIZE'),
+      queueTimeoutMs: parseEnvInt(process.env.POOL_QUEUE_TIMEOUT_MS, 'POOL_QUEUE_TIMEOUT_MS'),
+    });
+  } catch (error) {
+    // WHY: Wrap Zod errors with user-friendly messages
+    // Zod error messages can be verbose and technical. Provide clearer guidance.
+    if (error instanceof z.ZodError) {
+      const firstError = error.errors[0];
+      const field = firstError?.path.join('.') || 'unknown';
+      throw new Error(
+        `Invalid pool configuration: ${field} - ${firstError?.message}. ` +
+        `Check environment variables: POOL_MAX_CONCURRENT (1-1000), POOL_QUEUE_SIZE (1-1000), POOL_QUEUE_TIMEOUT_MS (1000-300000).`
+      );
+    }
+    // Re-throw non-Zod errors (e.g., parseEnvInt errors)
+    throw error;
+  }
 }
 
 // For backward compatibility, export commonly used values

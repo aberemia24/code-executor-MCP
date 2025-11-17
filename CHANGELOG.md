@@ -42,6 +42,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Always returns 200 (load balancers check response body for health status)
 
 ### Fixed
+- 🔧 **PR #45 Review Improvements** - Addressed code review feedback from SEC-001 queue polling fix
+  - **Issue**: Multiple minor issues identified in PR review
+  - **Improvements**:
+    1. **EventEmitter Memory Management** - Added `setMaxListeners()` in MCPClientPool constructor
+       - Prevents false-positive warnings when queue exceeds Node.js default (10 listeners)
+       - Set to queue size (200) to match maximum concurrent queued requests
+       - WHY: Large queues (200+ requests) would trigger EventEmitter warnings without this
+    2. **EventEmitter Cleanup on Shutdown** - Added `removeAllListeners()` in `disconnect()` method
+       - Prevents memory leaks from pending event listeners during shutdown
+       - Ensures clean shutdown without dangling event handlers
+       - WHY: Queued requests waiting for slot notifications need explicit cleanup
+    3. **Race Condition Prevention** - Reordered listener registration before timeout in `waitForQueueSlot()`
+       - Registers event listener FIRST, then sets timeout (previously reversed)
+       - Prevents theoretical race where event could be emitted between timeout and listener setup
+       - WHY: Missed notifications would cause request hangs (very low probability but possible)
+    4. **High-Concurrency Tests** - Added test suite for >10 concurrent listeners (T070)
+       - Tests 50 concurrent requests (well above Node.js default threshold)
+       - Verifies `setMaxListeners()` prevents warnings with large queues
+       - Validates proper listener cleanup after event emission
+    5. **Config Validation Error Messages** - Improved error handling in `getPoolConfig()`
+       - Added `parseEnvInt()` helper with explicit NaN detection
+       - Wraps Zod errors with user-friendly messages and environment variable hints
+       - Provides clear guidance: "Check POOL_MAX_CONCURRENT (1-1000), POOL_QUEUE_SIZE (1-1000), POOL_QUEUE_TIMEOUT_MS (1000-300000)"
+       - WHY: `parseInt('invalid')` returns NaN silently, causing confusing Zod errors downstream
+  - **Benefits**:
+    - ✅ Prevents EventEmitter warnings in production (high-load scenarios)
+    - ✅ Eliminates memory leaks from shutdown
+    - ✅ Closes theoretical race condition window
+    - ✅ Better test coverage for high-concurrency scenarios
+    - ✅ Clearer error messages for config validation
+  - **Files**:
+    - Modified: `src/mcp-client-pool.ts` (+8 lines: setMaxListeners, removeAllListeners, reordered waitForQueueSlot)
+    - Modified: `src/config.ts` (+34 lines: parseEnvInt helper, Zod error wrapping, import z)
+    - Modified: `tests/queue-polling-race-fix.test.ts` (+56 lines: High Concurrency T070 tests)
+  - **Tests**: 2 new high-concurrency tests, 751 total tests (100% pass rate)
+
 - 🔒 **TOCTOU Vulnerability Fix (SEC-006)** - Eliminated race condition in temp file integrity check
   - **Issue**: [#44](https://github.com/aberemia24/code-executor-MCP/issues/44)
   - **Root Cause**: Re-reading temp file after write created TOCTOU race window where attacker could modify file between write and hash verification
