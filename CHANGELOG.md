@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- 🔒 **CRITICAL: Race Condition in Queue Polling Loop (SEC-001)** - Replaced polling with event-driven pattern
+  - **Issue**: [#40](https://github.com/aberemia24/code-executor-MCP/issues/40)
+  - **Root Cause**: `waitForQueueSlot()` used infinite `while(true)` loop with 100ms polling
+  - **Impact**:
+    - FIFO violation: Re-enqueuing non-matching requests caused request starvation
+    - Memory leak: Accumulated setTimeout timers never cleaned up
+    - CPU waste: Continuous polling at 10 Hz per queued request
+  - **Fix**: Event-driven notification using EventEmitter
+    - Added `queueSlotEmitter` property to MCPClientPool
+    - Modified `waitForQueueSlot()` to wait for `slot-${requestId}` event
+    - Modified `processNextQueuedRequest()` to emit event after dequeue
+    - Added explicit timeout protection (30s default, configurable)
+    - Cleanup event listeners on timeout to prevent memory leaks
+  - **Benefits**:
+    - ✅ Preserves FIFO ordering (no re-enqueuing)
+    - ✅ No memory leaks (timers cleaned up properly)
+    - ✅ Zero CPU overhead (event-driven vs polling)
+    - ✅ Explicit timeout protection
+  - **Files**: `src/mcp-client-pool.ts` (lines 12, 73, 88, 494-540)
+  - **Tests**: 623/624 passing, no regressions
+
 ## [0.7.4] - 2025-11-16
 
 ### Security
