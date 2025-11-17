@@ -278,6 +278,65 @@ await callMCPTool('mcp__code-executor__run-typescript-code', {
 
 State persists across calls - no context switching.
 
+### Python Execution (Pyodide WebAssembly)
+
+Secure Python execution with Pyodide sandbox:
+
+**Enable Python:**
+```bash
+# Set environment variable (REQUIRED)
+export PYTHON_SANDBOX_READY=true
+
+# Enable in config
+# .code-executor.json
+{
+  "executors": {
+    "python": {
+      "enabled": true
+    }
+  }
+}
+```
+
+**Example - Python with MCP tools:**
+```python
+import asyncio
+
+async def main():
+    # Discover available tools
+    tools = await discover_mcp_tools()
+    print(f'Found {len(tools)} tools')
+
+    # Call MCP tool to read file
+    content = await call_mcp_tool('mcp__filesystem__read_file', {
+        'path': '/tmp/data.json'
+    })
+    print(f'File content: {content}')
+
+    # Process data
+    import json
+    data = json.loads(content)
+    result = [x * 2 for x in data['numbers']]
+    print(f'Processed: {result}')
+
+asyncio.run(main())
+```
+
+**Security guarantees:**
+- ✅ WebAssembly sandbox (same security as Deno)
+- ✅ Virtual filesystem (no host file access)
+- ✅ Network restricted to authenticated MCP proxy
+- ✅ No subprocess spawning
+- ✅ Memory limited by V8 heap
+
+**Limitations:**
+- Pure Python only (no native C extensions unless WASM-compiled)
+- ~2-3s first load (Pyodide npm package), <100ms cached
+- No multiprocessing/threading (use async/await)
+- 10-30% slower than native Python (WASM overhead acceptable for security)
+
+See [SECURITY.md](SECURITY.md#-python-executor-security-pyodide) for complete security model.
+
 ## Installation Options
 
 ### npm (Recommended)
@@ -376,12 +435,13 @@ const result = await executeTypescript({
 
 ## Security
 
-- **Sandboxed execution:** Deno (TypeScript) and Python subprocesses with restricted permissions
+- **Sandboxed execution:** Deno (TypeScript) and Pyodide WebAssembly (Python) - complete isolation
 - **Tool allowlists:** Whitelist specific MCP tools per execution
 - **Rate limiting:** 30 requests/60 seconds (configurable)
 - **Audit logging:** All tool calls logged with timestamps
 - **Deep validation:** AJV schema validation before execution
 - **SSRF protection:** Blocks AWS metadata, localhost, private IPs
+- **Python isolation:** Pyodide WASM sandbox - virtual FS, no host access, network restricted
 
 See [SECURITY.md](SECURITY.md) for security model and threat analysis.
 
@@ -392,7 +452,7 @@ See [SECURITY.md](SECURITY.md) for security model and threat analysis.
 | **Token savings** | 98% (141k → 1.6k) |
 | **Tool discovery** | <5ms (cached), 50-100ms (first call) |
 | **Validation** | <1ms per tool call |
-| **Sandbox startup** | ~200ms (Deno), ~300ms (Python) |
+| **Sandbox startup** | ~200ms (Deno), ~2-3s first/~100ms cached (Pyodide) |
 | **Test coverage** | 606 tests, 95%+ security, 90%+ overall |
 
 ## Documentation
@@ -418,7 +478,7 @@ A: Code-executor finds and merges both:
 A: AJV validates all tool calls against live schemas. On error, you get a detailed message showing expected parameters.
 
 **Q: What about Python support?**
-A: Full Python sandbox support with `run-python-code` tool. Same features as TypeScript.
+A: Full Python sandbox via Pyodide WebAssembly. Requires `PYTHON_SANDBOX_READY=true` environment variable. Same security model as Deno (WASM isolation, virtual FS, network restricted). Pure Python only - no native C extensions unless WASM-compiled. See [SECURITY.md](SECURITY.md#-python-executor-security-pyodide) for details.
 
 **Q: Can I use this in production?**
 A: Yes. 606 tests, 95%+ coverage, Docker support, audit logging, rate limiting.

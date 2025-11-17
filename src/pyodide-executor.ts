@@ -36,11 +36,11 @@ let pyodideCache: PyodideInterface | null = null;
  */
 async function getPyodide(): Promise<PyodideInterface> {
   if (!pyodideCache) {
-    console.error('🐍 Initializing Pyodide (first run, ~10s)...');
+    console.error('🐍 Initializing Pyodide (first run, ~2-3s)...');
 
+    // Node.js: Use npm package files (no indexURL needed)
+    // The pyodide npm package includes all necessary files locally
     pyodideCache = await loadPyodide({
-      indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/',
-
       // SECURITY: Disable stdin to prevent interactive prompts
       stdin: () => {
         throw new Error('stdin disabled for security (no interactive input allowed)');

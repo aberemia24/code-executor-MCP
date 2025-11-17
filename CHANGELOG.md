@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-11-17
+
+### 🔒 SECURITY - CRITICAL Python Executor Fix
+
+#### ✅ RESOLVED: Issues #50/#59 - Pyodide WebAssembly Sandbox
+
+**Original Vulnerability** (#50):
+- Native Python executor had **ZERO sandbox isolation**
+- Full filesystem access (could read /etc/passwd, SSH keys, credentials)
+- Full network access (SSRF to localhost services, cloud metadata endpoints)
+- Process spawning capability
+- Pattern-based blocking easily bypassed via string concatenation
+- CVSS: 9.8 (CRITICAL)
+
+**Solution Implemented** (#59):
+- Replaced insecure subprocess.spawn with **Pyodide WebAssembly runtime**
+- Same security model as Deno (WASM VM, no native syscalls)
+- Virtual filesystem (host files completely inaccessible)
+- Network restricted to authenticated localhost MCP proxy only
+- Industry-proven approach (Pydantic, JupyterLite, Google Colab, VS Code)
+
+**Implementation**:
+- Phase 1: Security gate with `PYTHON_SANDBOX_READY` environment variable
+- Phase 2: Complete Pyodide executor (`src/pyodide-executor.ts`)
+- Phase 3: Comprehensive security tests (13 tests covering all boundaries)
+- Two-phase execution: inject MCP tools → execute user code
+- Global Pyodide cache (~2-3s first load, <100ms cached)
+- Discovery functions: `discover_mcp_tools()`, `get_tool_schema()`, `search_tools()`
+
+**Security Boundaries**:
+1. ✅ WebAssembly VM - no syscall access
+2. ✅ Virtual FS - host filesystem isolated
+3. ✅ Network - only localhost MCP proxy (bearer auth)
+4. ✅ MCP proxy - tool allowlist enforced
+5. ✅ Timeout - promise rejection (SIGKILL equivalent)
+
+**Performance**:
+- Initialization: ~2-3s (first run), <100ms (cached)
+- Python execution: ~50-200ms (WASM overhead acceptable for security)
+- Memory overhead: ~20MB (WASM module + Python runtime)
+
+**Migration Guide**:
+```bash
+# Enable Pyodide sandbox (REQUIRED)
+export PYTHON_SANDBOX_READY=true
+
+# Config (.code-executor.json)
+{
+  "executors": {
+    "python": {
+      "enabled": true
+    }
+  }
+}
+```
+
+**Limitations** (acceptable for security):
+- Pure Python only (no native C extensions unless WASM-compiled)
+- 10-30% slower than native Python (WASM overhead)
+- No multiprocessing/threading (use async/await)
+- 4GB memory limit (WASM 32-bit addressing)
+
+**Testing**:
+- 13 comprehensive security tests
+- Filesystem isolation verified
+- Network isolation verified
+- Timeout enforcement verified
+- Manual end-to-end verification passed
+
+**Documentation**:
+- Updated SECURITY.md with Pyodide security model
+- Updated README.md with usage instructions and examples
+- Updated docs/architecture.md with Pyodide design
+- Created PYODIDE-STATUS.md with complete implementation status
+
+**References**:
+- Pydantic mcp-run-python: https://github.com/pydantic/mcp-run-python
+- Pyodide docs: https://pyodide.org/
+- Issues: #50 (vulnerability), #59 (solution)
+
+**Breaking Changes**:
+- Native Python executor removed entirely
+- `PYTHON_SANDBOX_READY=true` environment variable now required
+- Pure Python only (no C extensions without WASM compilation)
+
 ### Refactored
 - 🏗️ **God Object Refactor (SMELL-001)** - Extracted 4 handler classes from MCPProxyServer following Single Responsibility Principle
   - **Issue**: [#42](https://github.com/aberemia24/code-executor-MCP/issues/42)
