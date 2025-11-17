@@ -194,8 +194,15 @@ async def discover_mcp_tools(search_terms=None):
         raise Exception(f'Discovery failed: {response.status}')
 
     result = await response.json()
-    # Extract tools array from response dict
-    return result.get('tools', []) if isinstance(result, dict) else result
+
+    # Validate response format (explicit check for security)
+    if not isinstance(result, dict):
+        raise Exception(f'Invalid discovery response: expected dict, got {type(result).__name__}')
+
+    if 'tools' not in result:
+        raise Exception(f'Invalid discovery response: missing "tools" field. Got keys: {list(result.keys())}')
+
+    return result['tools']
 
 async def get_tool_schema(tool_name: str):
     """Get schema for specific tool"""

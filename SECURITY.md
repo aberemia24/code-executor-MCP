@@ -404,10 +404,13 @@ Replaced insecure native executor with **Pyodide WebAssembly sandbox**:
 
 **Layer 3: Network Isolation**
 - Network access via `pyodide.http.pyfetch` only
-- Restricted to localhost MCP proxy (127.0.0.1)
-- Bearer token authentication required
-- MCP proxy enforces tool allowlist
-- External network completely blocked
+- MCP proxy requires localhost (127.0.0.1) + bearer token authentication
+- MCP proxy enforces tool allowlist for all calls
+- **Best-effort external network blocking:**
+  - Node.js environment: External network may succeed (no CSP enforcement)
+  - Browser environment: CSP headers would block external requests
+  - **Mitigation:** MCP tool allowlist is the primary security boundary
+  - External access without allowlisted tools provides no system access
 
 **Layer 4: MCP Tool Allowlist**
 - Only explicitly allowed tools callable
