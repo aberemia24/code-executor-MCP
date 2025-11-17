@@ -130,9 +130,12 @@ export async function executePythonInSandbox(
     pyodide.globals.set('AUTH_TOKEN', authToken);
 
     await pyodide.runPythonAsync(`
-import js
 import json
 from pyodide.http import pyfetch
+
+# Use Python globals set via pyodide.globals.set()
+PROXY_PORT = globals()['PROXY_PORT']
+AUTH_TOKEN = globals()['AUTH_TOKEN']
 
 async def call_mcp_tool(tool_name: str, params: dict):
     """
@@ -154,11 +157,11 @@ async def call_mcp_tool(tool_name: str, params: dict):
         Exception: If tool call fails or authentication fails
     """
     response = await pyfetch(
-        f'http://localhost:{js.PROXY_PORT}',
+        f'http://localhost:{PROXY_PORT}',
         method='POST',
         headers={
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {js.AUTH_TOKEN}'
+            'Authorization': f'Bearer {AUTH_TOKEN}'
         },
         body=json.dumps({
             'toolName': tool_name,
@@ -178,19 +181,21 @@ async def call_mcp_tool(tool_name: str, params: dict):
 # Discovery functions (same as TypeScript sandbox)
 async def discover_mcp_tools(search_terms=None):
     """Discover available MCP tools"""
-    url = f'http://localhost:{js.PROXY_PORT}/mcp/tools'
+    url = f'http://localhost:{PROXY_PORT}/mcp/tools'
     if search_terms:
         query = '+'.join(search_terms)
         url += f'?q={query}'
 
     response = await pyfetch(url, headers={
-        'Authorization': f'Bearer {js.AUTH_TOKEN}'
+        'Authorization': f'Bearer {AUTH_TOKEN}'
     })
 
     if response.status != 200:
         raise Exception(f'Discovery failed: {response.status}')
 
-    return await response.json()
+    result = await response.json()
+    # Extract tools array from response dict
+    return result.get('tools', []) if isinstance(result, dict) else result
 
 async def get_tool_schema(tool_name: str):
     """Get schema for specific tool"""
