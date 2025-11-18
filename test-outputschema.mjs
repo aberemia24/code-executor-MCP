@@ -22,10 +22,10 @@ codeExecutorTools.forEach(t => {
   console.log(`   • ${t.server} :: ${t.name}`);
 });
 
-// Test 2: Get detailed schema for run-typescript-code
-console.log('\n\n=== SCHEMA INSPECTION: run-typescript-code ===\n');
+// Test 2: Get detailed schema for executeTypescript
+console.log('\n\n=== SCHEMA INSPECTION: executeTypescript ===\n');
 
-const tsSchema = await pool.getToolSchema('mcp__code-executor__run-typescript-code');
+const tsSchema = await pool.getToolSchema('mcp__code-executor__executeTypescript');
 
 if (tsSchema) {
   console.log('✅ Schema retrieved successfully\n');
@@ -88,10 +88,10 @@ if (healthSchema) {
   console.log('❌ Failed to retrieve schema');
 }
 
-// Test 4: Check run-python-code
-console.log('\n\n=== SCHEMA INSPECTION: run-python-code ===\n');
+// Test 4: Check executePython
+console.log('\n\n=== SCHEMA INSPECTION: executePython ===\n');
 
-const pySchema = await pool.getToolSchema('mcp__code-executor__run-python-code');
+const pySchema = await pool.getToolSchema('mcp__code-executor__executePython');
 
 if (pySchema) {
   console.log('✅ Schema retrieved successfully');

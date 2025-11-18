@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2025-01-18
+
+### Fixed
+- 🐛 **Duplicate Tool Registration** - Eliminated duplicate MCP tools caused by alias system
+  - **Root Cause**: `registerToolWithAliases()` method registered both primary names (`run-typescript-code`, `run-python-code`) AND aliases (`executeTypescript`, `executePython`), exposing 5 tools instead of 3
+  - **Impact**:
+    - Progressive disclosure violated: Token budget doubled (~1.2k → ~1.2k actual, but 5 tools vs 3 tools)
+    - User confusion: Unclear which tool name to use
+    - Architecture violation: Docs specify 3 canonical tools
+  - **Fix**: Removed `registerToolWithAliases()` method (YAGNI principle), registered tools once with canonical names
+    - Tool names: `executeTypescript`, `executePython`, `health` (3 tools)
+    - Updated error messages in `src/deno-checker.ts`
+    - Updated verification script `scripts/verify-progressive-disclosure.ts`
+    - Updated test script `test-outputschema.mjs`
+  - **Benefits**:
+    - ✅ Progressive disclosure restored: 3 tools, ~681 tokens
+    - ✅ Canonical naming: Clear, consistent tool names (camelCase)
+    - ✅ YAGNI applied: Removed unused abstraction
+    - ✅ Zero regressions: All 762 tests passing
+  - **Files**:
+    - Modified: `src/index.ts` (removed `registerToolWithAliases()`, lines 130-158)
+    - Modified: `src/deno-checker.ts` (updated error messages)
+    - Modified: `scripts/verify-progressive-disclosure.ts` (updated verification)
+    - Modified: `test-outputschema.mjs` (updated test assertions)
+  - **Tests**: 762/762 passing, zero failures
+
 ### Refactored
 - 🏗️ **God Object Refactor (SMELL-001)** - Extracted 4 handler classes from MCPProxyServer following Single Responsibility Principle
   - **Issue**: [#42](https://github.com/aberemia24/code-executor-MCP/issues/42)

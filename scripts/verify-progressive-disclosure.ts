@@ -24,18 +24,14 @@ console.log('T118: Top-Level Tool Count');
 console.log(`Found ${toolCount} tools registered\n`);
 
 // Extract tool names
-const runTypescriptMatch = indexContent.match(/'run-typescript-code'/);
-const executeTypescriptAliasMatch = indexContent.match(/'executeTypescript'/);
-const runPythonMatch = indexContent.match(/'run-python-code'/);
-const executePythonAliasMatch = indexContent.match(/'executePython'/);
+const executeTypescriptMatch = indexContent.match(/'executeTypescript'/);
+const executePythonMatch = indexContent.match(/'executePython'/);
 const healthMatch = indexContent.match(/'health'/);
 
 const tools: string[] = [];
-if (runTypescriptMatch) tools.push('run-typescript-code');
-if (runPythonMatch) tools.push('run-python-code');
+if (executeTypescriptMatch) tools.push('executeTypescript');
+if (executePythonMatch) tools.push('executePython');
 if (healthMatch) tools.push('health');
-if (executeTypescriptAliasMatch) tools.push('executeTypescript (alias)');
-if (executePythonAliasMatch) tools.push('executePython (alias)');
 
 console.log('Registered Tools:');
 tools.forEach((tool, i) => console.log(`  ${i + 1}. ${tool}`));
@@ -75,14 +71,10 @@ const executePythonTokens = estimateTokens(executePythonDesc);
 const healthTokens = estimateTokens(healthDesc);
 const totalTokens = executeTypescriptTokens + executePythonTokens + healthTokens;
 
-console.log(`  run-typescript-code: ~${executeTypescriptTokens} tokens`);
-console.log(`  run-python-code: ~${executePythonTokens} tokens`);
+console.log(`  executeTypescript: ~${executeTypescriptTokens} tokens`);
+console.log(`  executePython: ~${executePythonTokens} tokens`);
 console.log(`  health: ~${healthTokens} tokens`);
 console.log(`  TOTAL: ~${totalTokens} tokens\n`);
-
-console.log('Alias Presence Check');
-console.log(`  executeTypescript alias ${executeTypescriptAliasMatch ? 'found' : 'missing'}`);
-console.log(`  executePython alias ${executePythonAliasMatch ? 'found' : 'missing'}\n`);
 
 // Task T120: Verify discovery functions NOT in top-level list
 console.log('T120: Discovery Functions Check');

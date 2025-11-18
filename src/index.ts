@@ -127,35 +127,6 @@ class CodeExecutorServer {
     return null;
   }
 
-  private registerToolWithAliases(
-    name: string,
-    aliases: string[],
-    config: Parameters<McpServer['registerTool']>[1],
-    handler: Parameters<McpServer['registerTool']>[2]
-  ): void {
-    this.server.registerTool(name, config, handler);
-
-    for (const alias of aliases) {
-      const aliasConfig: Parameters<McpServer['registerTool']>[1] = {
-        ...config,
-        _meta: {
-          ...(config._meta ?? {}),
-          aliasFor: name,
-          legacy: true,
-        },
-      };
-
-      if (config.description) {
-        aliasConfig.description = `${config.description}\n\nLegacy alias for ${name}.`;
-      }
-
-      if (config.title) {
-        aliasConfig.title = `${config.title} (Legacy Alias)`;
-      }
-
-      this.server.registerTool(alias, aliasConfig, handler);
-    }
-  }
 
   /**
    * Register MCP tools
@@ -344,9 +315,8 @@ Example:
         }
       };
 
-      this.registerToolWithAliases(
-        'run-typescript-code',
-        ['executeTypescript'],
+      this.server.registerTool(
+        'executeTypescript',
         typescriptToolConfig,
         typescriptToolHandler
       );
@@ -425,9 +395,8 @@ This tool is DISABLED for your protection.`,
           };
         };
 
-        this.registerToolWithAliases(
-          'run-python-code',
-          ['executePython'],
+        this.server.registerTool(
+          'executePython',
           pythonSecurityStubConfig,
           pythonSecurityStubHandler
         );
@@ -596,9 +565,8 @@ Example:
         }
       };
 
-      this.registerToolWithAliases(
-        'run-python-code',
-        ['executePython'],
+      this.server.registerTool(
+        'executePython',
         pythonToolConfig,
         pythonToolHandler
       );
