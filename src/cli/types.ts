@@ -215,3 +215,190 @@ export interface LanguageSelection {
    */
   language: WrapperLanguage;
 }
+
+/**
+ * ToolSchema - MCP tool schema definition
+ *
+ * **SOURCE:** Retrieved from MCP server via listTools RPC
+ * **USAGE:** Used for wrapper generation template data
+ */
+export interface ToolSchema {
+  /**
+   * Tool name (fully qualified MCP tool identifier)
+   *
+   * **FORMAT:** mcp__server__toolname (e.g., "mcp__filesystem__read_file")
+   */
+  name: string;
+
+  /**
+   * Human-readable tool description
+   */
+  description: string;
+
+  /**
+   * JSON Schema for tool parameters
+   *
+   * **FORMAT:** JSON Schema Draft 7
+   */
+  parameters: {
+    type: 'object';
+    properties: Record<string, any>;
+    required?: string[];
+  };
+}
+
+/**
+ * MCPServerSelection - MCP server selected for wrapper generation
+ *
+ * **USAGE:** Extended MCPServerConfig with discovered tools
+ */
+export interface MCPServerSelection {
+  /**
+   * MCP server name
+   */
+  name: string;
+
+  /**
+   * MCP server description (optional)
+   */
+  description?: string;
+
+  /**
+   * Connection type
+   */
+  type: 'STDIO' | 'HTTP';
+
+  /**
+   * Connection status (from ping)
+   */
+  status: 'online' | 'offline' | 'unknown';
+
+  /**
+   * Number of tools exposed by this MCP server
+   */
+  toolCount: number;
+
+  /**
+   * Source AI tool config file path
+   */
+  sourceConfig: string;
+
+  /**
+   * Discovered tool schemas (optional, populated during generation)
+   */
+  tools?: ToolSchema[];
+}
+
+/**
+ * WrapperGenerationResult - Result of wrapper generation
+ *
+ * **USAGE:** Returned by WrapperGenerator.generateWrapper()
+ */
+export interface WrapperGenerationResult {
+  /**
+   * Whether generation succeeded
+   */
+  success: boolean;
+
+  /**
+   * MCP server name
+   */
+  mcpName: string;
+
+  /**
+   * Generated wrapper language
+   */
+  language: 'typescript' | 'python';
+
+  /**
+   * Output file path (absolute)
+   */
+  outputPath: string;
+
+  /**
+   * SHA-256 hash of tool schemas
+   */
+  schemaHash: string;
+
+  /**
+   * Generation timestamp (ISO 8601)
+   */
+  generatedAt: string;
+
+  /**
+   * Error message (if failed)
+   */
+  errorMessage?: string;
+}
+
+/**
+ * WrapperManifest - Tracks generated wrappers for incremental updates
+ *
+ * **LOCATION:** ~/.code-executor/wrapper-manifest.json
+ * **USAGE:** Daily sync compares hashes to detect MCP schema changes
+ */
+export interface WrapperManifest {
+  /**
+   * Manifest version (semantic version)
+   */
+  version: string;
+
+  /**
+   * Manifest generation timestamp (ISO 8601)
+   */
+  generatedAt: string;
+
+  /**
+   * List of generated wrappers
+   */
+  wrappers: WrapperEntry[];
+}
+
+/**
+ * WrapperEntry - Single wrapper generation record
+ *
+ * **USAGE:** Stored in WrapperManifest.wrappers array
+ */
+export interface WrapperEntry {
+  /**
+   * MCP server name
+   */
+  mcpName: string;
+
+  /**
+   * Wrapper language
+   */
+  language: 'typescript' | 'python';
+
+  /**
+   * SHA-256 hash of tool schemas
+   */
+  schemaHash: string;
+
+  /**
+   * Generated file path
+   */
+  outputPath: string;
+
+  /**
+   * Generation timestamp (ISO 8601)
+   */
+  generatedAt: string;
+
+  /**
+   * Generation status
+   */
+  status: 'success' | 'failed';
+
+  /**
+   * Error message (if status === 'failed')
+   */
+  errorMessage?: string;
+}
+
+/**
+ * ModuleFormat - JavaScript module system format
+ *
+ * **USAGE:** Determines import/export syntax in generated TypeScript wrappers
+ */
+export type ModuleFormat = 'esm' | 'commonjs';
