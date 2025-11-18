@@ -52,3 +52,59 @@ export interface SetupConfig {
    */
   schemaCacheTTL: number;
 }
+
+/**
+ * MCPServerConfig - Configuration for a single MCP server
+ *
+ * **SOURCE:** Extracted from .mcp.json files
+ * **FORMAT:** Standard MCP SDK configuration format
+ */
+export interface MCPServerConfig {
+  /**
+   * Server name/identifier
+   *
+   * **EXAMPLE:** "filesystem", "github", "code-executor"
+   */
+  name: string;
+
+  /**
+   * Command to execute the MCP server
+   *
+   * **EXAMPLES:** "node", "npx", "python", "/usr/bin/mcp-server"
+   */
+  command: string;
+
+  /**
+   * Command arguments
+   *
+   * **EXAMPLES:** ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+   */
+  args: string[];
+
+  /**
+   * Environment variables for the server process
+   *
+   * **EXAMPLES:** { "API_KEY": "value", "DEBUG": "true" }
+   */
+  env?: Record<string, string>;
+
+  /**
+   * Source tool that defined this MCP server
+   *
+   * **EXAMPLES:** "claude-code", "cursor", "windsurf"
+   */
+  sourceTool: string;
+}
+
+/**
+ * MCPConfig - Root configuration object from .mcp.json files
+ *
+ * **STRUCTURE:** Standard MCP SDK format
+ */
+export interface MCPConfig {
+  mcpServers: Record<string, {
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }>;
+}
