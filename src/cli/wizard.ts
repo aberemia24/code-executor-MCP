@@ -7,7 +7,6 @@
 
 import prompts from 'prompts';
 import { Ajv } from 'ajv';
-import ora from 'ora';
 import cliProgress from 'cli-progress';
 import type { ToolDetector } from './tool-detector.js';
 import type { AIToolMetadata } from './tool-registry.js';

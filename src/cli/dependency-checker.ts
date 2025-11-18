@@ -64,7 +64,7 @@ export class DependencyChecker {
         version,
         message: `Node.js v${version} detected (meets minimum v${this.MIN_NODE_VERSION}.0.0)`,
       };
-    } catch (error) {
+    } catch {
       return {
         available: false,
         message: `Node.js not found. Please install Node.js ${this.MIN_NODE_VERSION}+ from https://nodejs.org`,
@@ -125,7 +125,7 @@ export class DependencyChecker {
         version,
         message: `Python ${version} detected (meets minimum ${minMajor}.${minMinor}.0)`,
       };
-    } catch (error) {
+    } catch {
       return {
         available: false,
         message: `Python not found. Please install Python 3.9+ from https://python.org`,
@@ -164,7 +164,7 @@ export class DependencyChecker {
         version,
         message: `TypeScript compiler ${version} detected`,
       };
-    } catch (error) {
+    } catch {
       return {
         available: false,
         message: `TypeScript compiler not found. Install with: npm install -g typescript`,
@@ -212,7 +212,7 @@ export class DependencyChecker {
         version,
         message: `pip ${version} detected`,
       };
-    } catch (error) {
+    } catch {
       return {
         available: false,
         message: `pip not found. Install with: python -m ensurepip or https://pip.pypa.io`,

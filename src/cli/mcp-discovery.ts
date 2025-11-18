@@ -138,7 +138,7 @@ export class MCPDiscoveryService {
       const checkCommand = isWindows ? 'where' : 'which';
 
       // Execute command checker
-      exec(`${checkCommand} ${server.command}`, (error, stdout, stderr) => {
+      exec(`${checkCommand} ${server.command}`, (error, stdout, _stderr) => {
         if (error) {
           // Command not found or execution error
           resolve({
