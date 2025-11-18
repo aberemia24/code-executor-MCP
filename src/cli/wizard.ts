@@ -518,4 +518,69 @@ export class CLIWizard {
 
     return { succeeded, failed };
   }
+
+  /**
+   * Display completion screen with success/failure breakdown
+   *
+   * **RESPONSIBILITY (SRP):** UI-only method, displays generation results summary
+   * **WHY:** Provides clear feedback on what succeeded/failed during setup
+   *
+   * @param results - Generation results with succeeded and failed arrays
+   * @returns void - No return value, displays completion summary
+   */
+  displayCompletionScreen(results: {
+    succeeded: Array<{ server: string; language: string; path: string }>;
+    failed: Array<{ server: string; language: string; error: string }>;
+  }): void {
+    console.log('\n');
+
+    // Display header
+    if (results.failed.length === 0) {
+      console.log('✅ Setup Complete!\n');
+    } else if (results.succeeded.length === 0) {
+      console.log('❌ Setup Failed\n');
+    } else {
+      console.log('⚠️  Setup Complete (with warnings)\n');
+    }
+
+    // Display statistics
+    const total = results.succeeded.length + results.failed.length;
+    console.log(`Wrappers Generated: ${results.succeeded.length} succeeded, ${results.failed.length} failed (${total} total)\n`);
+
+    // Display succeeded wrappers
+    if (results.succeeded.length > 0) {
+      console.log('✅ Successful:');
+      results.succeeded.forEach(({ server, language, path }) => {
+        console.log(`   ${server} (${language}) → ${path}`);
+      });
+      console.log('');
+    }
+
+    // Display failed wrappers
+    if (results.failed.length > 0) {
+      console.log('❌ Failed:');
+      results.failed.forEach(({ server, language, error }) => {
+        console.log(`   ${server} (${language}): ${error}`);
+      });
+      console.log('');
+    }
+
+    // Display next steps
+    if (results.succeeded.length > 0) {
+      console.log('📚 Next Steps:');
+      console.log('   1. Import wrappers: import { readFile } from \'./generated/wrappers/typescript/mcp-<server>\'');
+      console.log('   2. Use in code: const content = await readFile({ path: \'/path/to/file\' });');
+      if (results.failed.length > 0) {
+        console.log('   3. Check logs: ~/.code-executor/wrapper-generation.log');
+        console.log('   4. Retry failed: code-executor-mcp generate-wrappers --mcps <server-name>');
+      }
+      console.log('');
+    } else {
+      console.log('💡 Troubleshooting:');
+      console.log('   1. Check logs: ~/.code-executor/wrapper-generation.log');
+      console.log('   2. Verify MCP servers are running: code-executor-mcp config');
+      console.log('   3. Retry setup: code-executor-mcp setup --force');
+      console.log('');
+    }
+  }
 }
