@@ -140,3 +140,54 @@ export interface MCPServerStatusResult {
    */
   message?: string;
 }
+
+/**
+ * DependencyCheckResult - Result of dependency version validation
+ *
+ * **USAGE:** Returned by DependencyChecker methods
+ */
+export interface DependencyCheckResult {
+  /**
+   * Whether the dependency is available and meets minimum version requirements
+   */
+  available: boolean;
+
+  /**
+   * Detected version (if available)
+   *
+   * **FORMAT:** Semantic version string without 'v' prefix (e.g., "22.0.0", "3.11.0")
+   */
+  version?: string;
+
+  /**
+   * Human-readable message (success confirmation or installation instructions)
+   */
+  message: string;
+}
+
+/**
+ * AllDependenciesResult - Result of checking all required dependencies
+ *
+ * **USAGE:** Returned by DependencyChecker.checkAllDependencies()
+ */
+export interface AllDependenciesResult {
+  /**
+   * Node.js version check result (minimum: 22.0.0)
+   */
+  node: DependencyCheckResult;
+
+  /**
+   * Python version check result (minimum: 3.9.0)
+   */
+  python: DependencyCheckResult;
+
+  /**
+   * TypeScript compiler availability check
+   */
+  typescript: DependencyCheckResult;
+
+  /**
+   * pip package manager availability check
+   */
+  pip: DependencyCheckResult;
+}
