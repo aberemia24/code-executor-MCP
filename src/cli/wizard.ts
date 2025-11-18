@@ -7,10 +7,13 @@
 
 import prompts from 'prompts';
 import { Ajv } from 'ajv';
+import ora from 'ora';
+import cliProgress from 'cli-progress';
 import type { ToolDetector } from './tool-detector.js';
 import type { AIToolMetadata } from './tool-registry.js';
-import type { SetupConfig, MCPServerStatusResult, LanguageSelection, WrapperLanguage } from './types.js';
+import type { SetupConfig, MCPServerStatusResult, LanguageSelection, WrapperLanguage, MCPServerSelection } from './types.js';
 import { setupConfigSchema } from './schemas/setup-config.schema.js';
+import type { WrapperGenerator } from './wrapper-generator.js';
 
 /**
  * CLIWizard - Main orchestrator for setup wizard
@@ -19,11 +22,14 @@ import { setupConfigSchema } from './schemas/setup-config.schema.js';
  */
 export class CLIWizard {
   private readonly ajv: Ajv;
+  private readonly wrapperGenerator?: WrapperGenerator;
 
   constructor(
-    private readonly toolDetector: ToolDetector
+    private readonly toolDetector: ToolDetector,
+    wrapperGenerator?: WrapperGenerator
   ) {
     this.ajv = new Ajv();
+    this.wrapperGenerator = wrapperGenerator;
   }
 
   /**
@@ -383,5 +389,133 @@ export class CLIWizard {
     }
 
     return selections;
+  }
+
+  /**
+   * Display benefits panel explaining advantages of using generated wrappers
+   *
+   * **WHY:** Educate users on wrapper benefits to maximize adoption
+   * **RESPONSIBILITY (SRP):** UI-only method, displays static information
+   *
+   * @returns void - No return value, displays panel and waits for user to read
+   */
+  displayBenefitsPanel(): void {
+    console.log('\n🎯 Why Use Wrappers?\n');
+    console.log('✅ Type Safety: IntelliSense autocomplete for all MCP tool parameters');
+    console.log('✅ Progressive Disclosure: AI agents see typed signatures, reducing trial-and-error');
+    console.log('✅ Easier Testing: Mock MCP calls with typed stubs');
+    console.log('✅ Error Prevention: Compile-time validation catches invalid parameters');
+    console.log('✅ Better Visibility: Call graph analysis shows MCP usage patterns');
+    console.log('✅ Documentation: Generated JSDoc/docstrings from MCP schemas');
+    console.log('');
+  }
+
+  /**
+   * Generate wrappers with progress tracking
+   *
+   * **RESPONSIBILITY (SRP):** Orchestrate wrapper generation with UI feedback
+   * **WHY:** Provides visual feedback during potentially long-running operation
+   * **RESILIENCE:** Handles partial failures gracefully (some succeed, some fail)
+   *
+   * @param selections - Language selections per MCP server
+   * @param moduleFormat - Module format for TypeScript wrappers (ESM or CommonJS)
+   * @returns Result object with succeeded and failed arrays
+   *
+   * @throws Error if wrapperGenerator not injected
+   */
+  async generateWrappersWithProgress(
+    selections: LanguageSelection[],
+    moduleFormat: 'esm' | 'commonjs'
+  ): Promise<{ succeeded: Array<{ server: string; language: string; path: string }>; failed: Array<{ server: string; language: string; error: string }> }> {
+    if (!this.wrapperGenerator) {
+      throw new Error('WrapperGenerator not initialized. Cannot generate wrappers.');
+    }
+
+    const succeeded: Array<{ server: string; language: string; path: string }> = [];
+    const failed: Array<{ server: string; language: string; error: string }> = [];
+
+    // Calculate total tasks (expand 'both' language into 2 tasks)
+    const totalTasks = selections.reduce((count, selection) => {
+      return count + (selection.language === 'both' ? 2 : 1);
+    }, 0);
+
+    // Create progress bar
+    const progressBar = new cliProgress.SingleBar({
+      format: 'Generating wrappers [{bar}] {percentage}% | {value}/{total} | {task}',
+      barCompleteChar: '\u2588',
+      barIncompleteChar: '\u2591',
+      hideCursor: true,
+    });
+
+    progressBar.start(totalTasks, 0, { task: 'Initializing...' });
+
+    let currentTask = 0;
+
+    for (const selection of selections) {
+      const { server, language } = selection;
+
+      // Expand 'both' into TypeScript + Python
+      const languages: Array<'typescript' | 'python'> = language === 'both' ? ['typescript', 'python'] : [language as 'typescript' | 'python'];
+
+      for (const lang of languages) {
+        currentTask++;
+        progressBar.update(currentTask, { task: `${server.name} (${lang})` });
+
+        try {
+          // Convert MCPServerConfig to MCPServerSelection for WrapperGenerator
+          //
+          // **WHY HARDCODED VALUES ARE SAFE:**
+          // WrapperGenerator.generateWrapper() only uses:
+          //   - name (required): Passed from server.name
+          //   - tools (optional): Fetched by generator if undefined
+          //
+          // Unused fields (safe to mock):
+          //   - type, status, toolCount, sourceConfig: Not accessed by generator
+          //
+          // **ARCHITECTURE NOTE:** LanguageSelection uses MCPServerConfig (from selectLanguagePerMCP),
+          // but WrapperGenerator requires MCPServerSelection (superset with metadata).
+          // Since metadata fields aren't used for generation, hardcoded defaults are acceptable.
+          //
+          // **FUTURE:** If WrapperGenerator needs real metadata, pass MCPServerStatusResult
+          // instead of MCPServerConfig in LanguageSelection.
+          const mcpForGeneration: MCPServerSelection = {
+            name: server.name,
+            description: undefined,
+            type: 'STDIO' as const, // Not used by generator
+            status: 'online' as const, // Not used by generator
+            toolCount: 0, // Not used by generator
+            sourceConfig: '', // Not used by generator
+            tools: undefined, // WrapperGenerator fetches if missing
+          };
+
+          const result = await this.wrapperGenerator.generateWrapper(mcpForGeneration, lang, moduleFormat);
+
+          if (result.success) {
+            succeeded.push({
+              server: server.name,
+              language: lang,
+              path: result.outputPath,
+            });
+          } else {
+            failed.push({
+              server: server.name,
+              language: lang,
+              error: 'Generation failed (check logs)',
+            });
+          }
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          failed.push({
+            server: server.name,
+            language: lang,
+            error: errorMessage,
+          });
+        }
+      }
+    }
+
+    progressBar.stop();
+
+    return { succeeded, failed };
   }
 }

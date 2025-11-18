@@ -714,4 +714,140 @@ describe('CLIWizard', () => {
       expect(result[2].language).toBe('both');
     });
   });
+
+  describe('generateWrappersWithProgress', () => {
+    it('should_generateWrappers_when_validLanguageSelections', async () => {
+      // Arrange: Mock WrapperGenerator
+      const mockGenerate = vi.fn().mockResolvedValue({
+        success: true,
+        outputPath: '/test/output.ts',
+        generatedAt: new Date().toISOString(),
+      });
+
+      const wrapperGenerator = {
+        generateWrapper: mockGenerate,
+      };
+
+      const wizard = new CLIWizard(toolDetector as any);
+      (wizard as any).wrapperGenerator = wrapperGenerator;
+
+      const selections: LanguageSelection[] = [
+        {
+          server: {
+            name: 'filesystem',
+            description: 'File operations',
+            type: 'STDIO' as const,
+            status: 'available' as const,
+          },
+          language: 'typescript' as WrapperLanguage,
+        },
+      ];
+
+      // Act
+      const result = await wizard.generateWrappersWithProgress(selections, 'esm');
+
+      // Assert
+      expect(result).toBeDefined();
+      expect(result.succeeded).toHaveLength(1);
+      expect(result.failed).toHaveLength(0);
+      expect(mockGenerate).toHaveBeenCalledTimes(1);
+    });
+
+    it('should_handlePartialFailures_when_someWrappersFailToGenerate', async () => {
+      // Arrange: Mock WrapperGenerator with one success, one failure
+      const mockGenerate = vi.fn()
+        .mockResolvedValueOnce({
+          success: true,
+          outputPath: '/test/filesystem.ts',
+          generatedAt: new Date().toISOString(),
+        })
+        .mockRejectedValueOnce(new Error('Schema fetch failed'));
+
+      const wrapperGenerator = {
+        generateWrapper: mockGenerate,
+      };
+
+      const wizard = new CLIWizard(toolDetector as any);
+      (wizard as any).wrapperGenerator = wrapperGenerator;
+
+      const selections: LanguageSelection[] = [
+        {
+          server: {
+            name: 'filesystem',
+            description: 'File operations',
+            type: 'STDIO' as const,
+            status: 'available' as const,
+          },
+          language: 'typescript' as WrapperLanguage,
+        },
+        {
+          server: {
+            name: 'broken',
+            description: 'Broken server',
+            type: 'STDIO' as const,
+            status: 'offline' as const,
+          },
+          language: 'python' as WrapperLanguage,
+        },
+      ];
+
+      // Act
+      const result = await wizard.generateWrappersWithProgress(selections, 'esm');
+
+      // Assert
+      expect(result.succeeded).toHaveLength(1);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0].error).toBe('Schema fetch failed');
+    });
+
+    it('should_generateBothLanguages_when_languageIsBoth', async () => {
+      // Arrange
+      const mockGenerate = vi.fn()
+        .mockResolvedValueOnce({
+          success: true,
+          outputPath: '/test/filesystem.ts',
+          generatedAt: new Date().toISOString(),
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          outputPath: '/test/filesystem.py',
+          generatedAt: new Date().toISOString(),
+        });
+
+      const wrapperGenerator = {
+        generateWrapper: mockGenerate,
+      };
+
+      const wizard = new CLIWizard(toolDetector as any);
+      (wizard as any).wrapperGenerator = wrapperGenerator;
+
+      const selections: LanguageSelection[] = [
+        {
+          server: {
+            name: 'filesystem',
+            description: 'File operations',
+            type: 'STDIO' as const,
+            status: 'available' as const,
+          },
+          language: 'both' as WrapperLanguage,
+        },
+      ];
+
+      // Act
+      const result = await wizard.generateWrappersWithProgress(selections, 'esm');
+
+      // Assert
+      expect(mockGenerate).toHaveBeenCalledTimes(2);
+      expect(mockGenerate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'filesystem' }),
+        'typescript',
+        'esm'
+      );
+      expect(mockGenerate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'filesystem' }),
+        'python',
+        'esm'
+      );
+    });
+  });
 });
