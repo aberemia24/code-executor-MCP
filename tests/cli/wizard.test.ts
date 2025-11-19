@@ -949,4 +949,170 @@ describe('CLIWizard', () => {
       expect(validate('06:00')).toBe(true);
     });
   });
+
+  /**
+   * Visual Feedback Tests (FR-7)
+   *
+   * **SCOPE:** ASCII banner, color-coded output, spinners, progress bars
+   * **TDD PHASE:** RED (failing tests)
+   */
+  describe('Visual Feedback (FR-7)', () => {
+    describe('showBanner()', () => {
+      it('should_displayASCIIBanner_when_wizardStarts', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+
+        // Act & Assert
+        expect(() => wizard.showBanner()).not.toThrow();
+      });
+
+      it('should_returnBannerString_when_called', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+
+        // Act
+        const banner = wizard.showBanner();
+
+        // Assert
+        expect(banner).toBeDefined();
+        expect(typeof banner).toBe('string');
+        expect(banner.length).toBeGreaterThan(0);
+        // Banner contains ASCII art or fallback text
+        expect(banner.length).toBeGreaterThan(20); // ASCII art is longer than 20 chars
+      });
+    });
+
+    describe('formatMessage()', () => {
+      it('should_formatSuccessMessage_when_typeIsSuccess', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const message = 'Configuration saved successfully';
+
+        // Act
+        const formatted = wizard.formatMessage('success', message);
+
+        // Assert
+        expect(formatted).toContain('✓');
+        expect(formatted).toContain(message);
+      });
+
+      it('should_formatErrorMessage_when_typeIsError', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const message = 'Permission denied';
+
+        // Act
+        const formatted = wizard.formatMessage('error', message);
+
+        // Assert
+        expect(formatted).toContain('✗');
+        expect(formatted).toContain(message);
+      });
+
+      it('should_formatWarningMessage_when_typeIsWarning', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const message = 'Some dependencies missing';
+
+        // Act
+        const formatted = wizard.formatMessage('warning', message);
+
+        // Assert
+        expect(formatted).toContain('⚠');
+        expect(formatted).toContain(message);
+      });
+
+      it('should_formatInfoMessage_when_typeIsInfo', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const message = 'Using cached schemas';
+
+        // Act
+        const formatted = wizard.formatMessage('info', message);
+
+        // Assert
+        expect(formatted).toContain('ℹ');
+        expect(formatted).toContain(message);
+      });
+    });
+
+    describe('Spinner Integration', () => {
+      it('should_createSpinner_when_startingAsyncOperation', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+
+        // Act
+        const spinner = wizard.createSpinner('Discovering MCP servers...');
+
+        // Assert
+        expect(spinner).toBeDefined();
+        expect(spinner).toHaveProperty('start');
+        expect(spinner).toHaveProperty('succeed');
+        expect(spinner).toHaveProperty('fail');
+        expect(spinner).toHaveProperty('warn');
+      });
+    });
+
+    describe('Progress Bar Integration', () => {
+      it('should_createProgressBar_when_trackingMultiStepOperation', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+
+        // Act
+        const progressBar = wizard.createProgressBar(10, 'Generating wrappers');
+
+        // Assert
+        expect(progressBar).toBeDefined();
+        expect(progressBar).toHaveProperty('start');
+        expect(progressBar).toHaveProperty('update');
+        expect(progressBar).toHaveProperty('increment');
+        expect(progressBar).toHaveProperty('stop');
+      });
+    });
+
+    describe('Completion Summary', () => {
+      it('should_displayCompletionTable_when_setupComplete', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const summary = {
+          toolsConfigured: ['claude-code', 'windsurf'],
+          mcpsDiscovered: 5,
+          wrappersGenerated: 3,
+          wrappersFailed: 0,
+          dailySyncEnabled: true,
+        };
+
+        // Act
+        const table = wizard.formatCompletionSummary(summary);
+
+        // Assert
+        expect(table).toBeDefined();
+        expect(typeof table).toBe('string');
+        expect(table).toContain('Setup Complete');
+        expect(table).toContain('claude-code');
+        expect(table).toContain('windsurf');
+        expect(table).toContain('5'); // MCP count
+        expect(table).toContain('3'); // Wrapper count
+      });
+
+      it('should_showWarning_when_wrappersFailedGeneration', () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const summary = {
+          toolsConfigured: ['claude-code'],
+          mcpsDiscovered: 3,
+          wrappersGenerated: 2,
+          wrappersFailed: 1,
+          dailySyncEnabled: false,
+        };
+
+        // Act
+        const table = wizard.formatCompletionSummary(summary);
+
+        // Assert
+        expect(table).toContain('1'); // Failed count
+        expect(table).toContain('⚠'); // Warning icon
+      });
+    });
+  });
 });

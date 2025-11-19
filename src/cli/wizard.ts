@@ -8,6 +8,9 @@
 import prompts from 'prompts';
 import { Ajv } from 'ajv';
 import cliProgress from 'cli-progress';
+import figlet from 'figlet';
+import kleur from 'kleur';
+import ora, { type Ora } from 'ora';
 import type { ToolDetector } from './tool-detector.js';
 import type { AIToolMetadata } from './tool-registry.js';
 import type { SetupConfig, MCPServerStatusResult, LanguageSelection, WrapperLanguage, MCPServerSelection } from './types.js';
@@ -715,5 +718,215 @@ export class CLIWizard {
 
     console.log(`✅ VS Code tasks generated: ${tasksPath}`);
     console.log('   Run "Tasks: Run Task" in VS Code to use them');
+  }
+
+  // ============================================================================
+  // Visual Feedback Methods (FR-7)
+  // ============================================================================
+
+  /**
+   * Display ASCII art banner for wizard
+   *
+   * **BEHAVIOR:**
+   * 1. Generates ASCII art using figlet library
+   * 2. Returns banner string for display
+   *
+   * **WHY:** Professional branding and visual appeal for CLI wizard
+   *
+   * @returns ASCII art banner string
+   *
+   * @example
+   * const wizard = new CLIWizard(toolDetector);
+   * const banner = wizard.showBanner();
+   * console.log(banner);
+   */
+  showBanner(): string {
+    try {
+      const banner = figlet.textSync('Code Executor MCP', {
+        font: 'Standard',
+        horizontalLayout: 'default',
+        verticalLayout: 'default',
+      });
+      return kleur.cyan(banner);
+    } catch (error) {
+      // Fallback if figlet fails
+      return kleur.bold().cyan('=== Code Executor MCP Setup Wizard ===');
+    }
+  }
+
+  /**
+   * Format message with color coding and icons
+   *
+   * **BEHAVIOR:**
+   * - success: Green with ✓ icon
+   * - error: Red with ✗ icon
+   * - warning: Yellow with ⚠ icon
+   * - info: Blue with ℹ icon
+   *
+   * **WHY:** Consistent visual feedback across wizard
+   *
+   * @param type Message type (success, error, warning, info)
+   * @param message Message text
+   * @returns Formatted message string
+   *
+   * @example
+   * wizard.formatMessage('success', 'Configuration saved');
+   * // Returns: "✓ Configuration saved" (in green)
+   */
+  formatMessage(type: 'success' | 'error' | 'warning' | 'info', message: string): string {
+    switch (type) {
+      case 'success':
+        return kleur.green(`✓ ${message}`);
+      case 'error':
+        return kleur.red(`✗ ${message}`);
+      case 'warning':
+        return kleur.yellow(`⚠ ${message}`);
+      case 'info':
+        return kleur.blue(`ℹ ${message}`);
+      default:
+        return message;
+    }
+  }
+
+  /**
+   * Create spinner for async operations
+   *
+   * **BEHAVIOR:**
+   * - Creates ora spinner instance
+   * - Returns spinner with start/succeed/fail/warn methods
+   *
+   * **LIFECYCLE:** Caller MUST call .stop(), .succeed(), or .fail() to clean up
+   * **WHY:** Unclosed spinners leak Node.js timers and prevent process exit
+   *
+   * @param text Initial spinner text
+   * @returns Ora spinner instance
+   *
+   * @example
+   * const spinner = wizard.createSpinner('Discovering MCP servers...');
+   * try {
+   *   spinner.start();
+   *   await asyncOperation();
+   *   spinner.succeed('Success');
+   * } catch (error) {
+   *   spinner.fail('Failed');
+   * }
+   */
+  createSpinner(text: string): Ora {
+    return ora({
+      text,
+      color: 'cyan',
+      spinner: 'dots',
+    });
+  }
+
+  /**
+   * Create progress bar for multi-step operations
+   *
+   * **BEHAVIOR:**
+   * - Creates cli-progress SingleBar instance
+   * - Returns progress bar with start/update/increment/stop methods
+   *
+   * **LIFECYCLE:** Caller MUST call .stop() to clean up (restores cursor, clears output)
+   * **WHY:** Unclosed progress bars leave cursor hidden and incomplete terminal output
+   *
+   * @param total Total number of steps
+   * @param label Progress bar label
+   * @returns CLI progress bar instance
+   *
+   * @example
+   * const bar = wizard.createProgressBar(10, 'Generating wrappers');
+   * try {
+   *   bar.start(10, 0);
+   *   for (let i = 0; i < 10; i++) {
+   *     // ... generate wrapper ...
+   *     bar.increment();
+   *   }
+   * } finally {
+   *   bar.stop(); // ✅ Guaranteed cleanup
+   * }
+   */
+  createProgressBar(total: number, label: string): cliProgress.SingleBar {
+    return new cliProgress.SingleBar({
+      format: `${kleur.cyan(label)} |${kleur.cyan('{bar}')}| {percentage}% | {value}/{total}`,
+      barCompleteChar: '█',
+      barIncompleteChar: '░',
+      hideCursor: true,
+    });
+  }
+
+  /**
+   * Format completion summary table
+   *
+   * **BEHAVIOR:**
+   * - Displays setup completion summary
+   * - Shows configured tools, MCPs discovered, wrappers generated
+   * - Highlights failures with warning color
+   *
+   * **WHY:** Clear summary of wizard results
+   *
+   * @param summary Setup completion data
+   * @returns Formatted summary table string
+   *
+   * @example
+   * const summary = {
+   *   toolsConfigured: ['claude-code', 'windsurf'],
+   *   mcpsDiscovered: 5,
+   *   wrappersGenerated: 3,
+   *   wrappersFailed: 0,
+   *   dailySyncEnabled: true,
+   * };
+   * const table = wizard.formatCompletionSummary(summary);
+   * console.log(table);
+   */
+  formatCompletionSummary(summary: {
+    toolsConfigured: string[];
+    mcpsDiscovered: number;
+    wrappersGenerated: number;
+    wrappersFailed: number;
+    dailySyncEnabled: boolean;
+  }): string {
+    const lines: string[] = [];
+
+    // Header
+    lines.push('');
+    lines.push(kleur.bold().green('═'.repeat(60)));
+    lines.push(kleur.bold().green('  Setup Complete! 🎉'));
+    lines.push(kleur.bold().green('═'.repeat(60)));
+    lines.push('');
+
+    // Tools configured
+    lines.push(kleur.bold('AI Tools Configured:'));
+    summary.toolsConfigured.forEach((tool) => {
+      lines.push(kleur.cyan(`  ✓ ${tool}`));
+    });
+    lines.push('');
+
+    // MCP discovery
+    lines.push(kleur.bold('MCP Servers:'));
+    lines.push(kleur.cyan(`  ${summary.mcpsDiscovered} servers discovered`));
+    lines.push('');
+
+    // Wrapper generation
+    lines.push(kleur.bold('Wrappers Generated:'));
+    lines.push(kleur.green(`  ✓ ${summary.wrappersGenerated} successful`));
+    if (summary.wrappersFailed > 0) {
+      lines.push(kleur.yellow(`  ⚠ ${summary.wrappersFailed} failed (see logs)`));
+    }
+    lines.push('');
+
+    // Daily sync
+    lines.push(kleur.bold('Daily Sync:'));
+    if (summary.dailySyncEnabled) {
+      lines.push(kleur.green('  ✓ Enabled (automated wrapper updates)'));
+    } else {
+      lines.push(kleur.gray('  ⊘ Disabled (manual updates only)'));
+    }
+    lines.push('');
+
+    // Footer
+    lines.push(kleur.bold().green('═'.repeat(60)));
+    lines.push('');
+
+    return lines.join('\n');
   }
 }
