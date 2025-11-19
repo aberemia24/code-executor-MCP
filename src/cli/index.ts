@@ -11,6 +11,7 @@ import { ToolDetector } from './tool-detector.js';
 import { WrapperGenerator } from './wrapper-generator.js';
 import { SelfInstaller } from './self-installer.js';
 import { MCPDiscoveryService } from './mcp-discovery.js';
+import type { MCPServerConfig } from './types.js';
 import path from 'path';
 import os from 'os';
 
@@ -78,10 +79,37 @@ async function main(): Promise<void> {
 
       console.log(wizard.formatMessage('success', 'Configuration complete'));
 
-      // Step 8: Discover MCP servers
+      // Step 8: Discover MCP servers from AI tools
       console.log('\n🔎 Discovering MCP servers...\n');
       const discoveryService = new MCPDiscoveryService();
-      const discoveredServers = await discoveryService.discoverMCPServers(selectedTools);
+      const aiToolServers = await discoveryService.discoverMCPServers(selectedTools);
+
+      console.log(
+        wizard.formatMessage('info', `Found ${aiToolServers.length} MCP server(s) from AI tools`)
+      );
+
+      // Step 8.1: Prompt for project-specific .mcp.json
+      console.log('\n📂 Project-Specific MCP Configuration\n');
+      const projectConfigPath = await wizard.promptForProjectMCPConfig();
+
+      let projectServers: MCPServerConfig[] = [];
+      if (projectConfigPath) {
+        console.log(wizard.formatMessage('info', `Scanning ${projectConfigPath}...`));
+        projectServers = await discoveryService.scanProjectConfig(projectConfigPath);
+
+        if (projectServers.length > 0) {
+          console.log(
+            wizard.formatMessage('success', `Found ${projectServers.length} MCP server(s) in project config`)
+          );
+        } else {
+          console.log(
+            wizard.formatMessage('warning', 'No MCP servers found in project config')
+          );
+        }
+      }
+
+      // Step 8.2: Merge AI tool and project MCPs
+      const discoveredServers = [...aiToolServers, ...projectServers];
 
       if (discoveredServers.length === 0) {
         console.log(
@@ -92,7 +120,7 @@ async function main(): Promise<void> {
       }
 
       console.log(
-        wizard.formatMessage('success', `Found ${discoveredServers.length} MCP server(s)`)
+        wizard.formatMessage('success', `Total: ${discoveredServers.length} MCP server(s) discovered`)
       );
 
       // Step 9: Select MCP servers - convert MCPServerConfig to MCPServerStatusResult
@@ -120,19 +148,36 @@ async function main(): Promise<void> {
       } else {
         // Step 12: Generate wrappers (FR-7)
         console.log('\n📝 Generating wrappers...\n');
-        const result = await wizard.generateWrappersWithProgress(languageSelections, 'esm');
-
-        console.log(
-          wizard.formatMessage(
-            result.failed.length === 0 ? 'success' : 'warning',
-            `Generated ${result.succeeded.length} wrapper(s)`
-          )
+        const result = await wizard.generateWrappersWithProgress(
+          languageSelections,
+          'esm',
+          regenOption === 'force' ? 'force' : 'missing'
         );
 
+        // Show generated count
+        if (result.succeeded.length > 0) {
+          console.log(
+            wizard.formatMessage('success', `Generated ${result.succeeded.length} wrapper(s)`)
+          );
+        }
+
+        // Show skipped count
+        if (result.skipped.length > 0) {
+          console.log(
+            wizard.formatMessage('info', `Skipped ${result.skipped.length} existing wrapper(s)`)
+          );
+        }
+
+        // Show failed count
         if (result.failed.length > 0) {
           console.log(
             wizard.formatMessage('error', `${result.failed.length} wrapper(s) failed`)
           );
+        }
+
+        // Show summary if nothing happened
+        if (result.succeeded.length === 0 && result.skipped.length === 0 && result.failed.length === 0) {
+          console.log(wizard.formatMessage('info', 'No wrappers to generate'));
         }
       }
 

@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CLIWizard } from '../../src/cli/wizard.js';
 import { ToolDetector } from '../../src/cli/tool-detector.js';
 import type { AIToolMetadata } from '../../src/cli/tool-registry.js';
+import os from 'node:os';
 
 // Mock fs/promises for ToolDetector (preserve real methods for Phase 11 tests)
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -842,12 +843,14 @@ describe('CLIWizard', () => {
       expect(mockGenerate).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'filesystem' }),
         'typescript',
-        'esm'
+        'esm',
+        'force' // regenOption parameter
       );
       expect(mockGenerate).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'filesystem' }),
         'python',
-        'esm'
+        'esm',
+        'force' // regenOption parameter
       );
     });
   });
@@ -1362,6 +1365,92 @@ describe('CLIWizard', () => {
         // Assert
         expect(result).toBeNull();
       });
+    });
+  });
+
+  /**
+   * Project MCP Configuration Tests
+   *
+   * **SCOPE:** Project-specific .mcp.json path prompt and scanning
+   * **TDD PHASE:** RED (failing tests)
+   */
+  describe('promptForProjectMCPConfig()', () => {
+    it('should_returnPath_when_userProvidesValidPath', async () => {
+      // Arrange
+      const wizard = new CLIWizard(toolDetector);
+      // Use a path within home directory (allowed by security validation)
+      const projectPath = `${os.homedir()}/my-project/.mcp.json`;
+
+      vi.mocked(prompts).mockResolvedValueOnce({ path: projectPath });
+
+      // Act
+      const result = await wizard.promptForProjectMCPConfig();
+
+      // Assert
+      expect(result).toContain(os.homedir());
+      expect(result).toContain('my-project/.mcp.json');
+      expect(prompts).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'text',
+          name: 'path',
+          message: expect.stringContaining('project'),
+        })
+      );
+    });
+
+    it('should_returnNull_when_userSkips', async () => {
+      // Arrange
+      const wizard = new CLIWizard(toolDetector);
+
+      vi.mocked(prompts).mockResolvedValueOnce({ path: '' });
+
+      // Act
+      const result = await wizard.promptForProjectMCPConfig();
+
+      // Assert
+      expect(result).toBeNull();
+    });
+
+    it('should_returnNull_when_userCancels', async () => {
+      // Arrange
+      const wizard = new CLIWizard(toolDetector);
+
+      vi.mocked(prompts).mockResolvedValueOnce(null);
+
+      // Act
+      const result = await wizard.promptForProjectMCPConfig();
+
+      // Assert
+      expect(result).toBeNull();
+    });
+
+    it('should_expandTilde_when_pathContainsTilde', async () => {
+      // Arrange
+      const wizard = new CLIWizard(toolDetector);
+
+      vi.mocked(prompts).mockResolvedValueOnce({ path: '~/my-project/.mcp.json' });
+
+      // Act
+      const result = await wizard.promptForProjectMCPConfig();
+
+      // Assert
+      expect(result).toContain(os.homedir());
+      expect(result).not.toContain('~');
+    });
+
+    it('should_showHelpText_when_promptDisplayed', async () => {
+      // Arrange
+      const wizard = new CLIWizard(toolDetector);
+
+      vi.mocked(prompts).mockResolvedValueOnce({ path: '' });
+
+      // Act
+      await wizard.promptForProjectMCPConfig();
+
+      // Assert
+      const promptCall = vi.mocked(prompts).mock.calls[0][0];
+      expect(promptCall).toHaveProperty('message');
+      expect((promptCall as any).message).toContain('project');
     });
   });
 });

@@ -12,6 +12,7 @@ import figlet from 'figlet';
 import kleur from 'kleur';
 import ora, { type Ora } from 'ora';
 import * as path from 'path';
+import * as os from 'os';
 import type { ToolDetector } from './tool-detector.js';
 import { getSupportedToolsForPlatform, type AIToolMetadata } from './tool-registry.js';
 import type { SetupConfig, MCPServerStatusResult, LanguageSelection, WrapperLanguage, MCPServerSelection } from './types.js';
@@ -495,13 +496,15 @@ export class CLIWizard {
    */
   async generateWrappersWithProgress(
     selections: LanguageSelection[],
-    moduleFormat: 'esm' | 'commonjs'
-  ): Promise<{ succeeded: Array<{ server: string; language: string; path: string }>; failed: Array<{ server: string; language: string; error: string }> }> {
+    moduleFormat: 'esm' | 'commonjs',
+    regenOption: 'missing' | 'force' = 'force'
+  ): Promise<{ succeeded: Array<{ server: string; language: string; path: string }>; skipped: Array<{ server: string; language: string; path: string }>; failed: Array<{ server: string; language: string; error: string }> }> {
     if (!this.wrapperGenerator) {
       throw new Error('WrapperGenerator not initialized. Cannot generate wrappers.');
     }
 
     const succeeded: Array<{ server: string; language: string; path: string }> = [];
+    const skipped: Array<{ server: string; language: string; path: string }> = [];
     const failed: Array<{ server: string; language: string; error: string }> = [];
 
     // Calculate total tasks (expand 'both' language into 2 tasks)
@@ -558,14 +561,22 @@ export class CLIWizard {
             tools: undefined, // WrapperGenerator fetches if missing
           };
 
-          const result = await this.wrapperGenerator.generateWrapper(mcpForGeneration, lang, moduleFormat);
+          const result = await this.wrapperGenerator.generateWrapper(mcpForGeneration, lang, moduleFormat, regenOption);
 
           if (result.success) {
-            succeeded.push({
-              server: server.name,
-              language: lang,
-              path: result.outputPath,
-            });
+            if (result.skipped) {
+              skipped.push({
+                server: server.name,
+                language: lang,
+                path: result.outputPath,
+              });
+            } else {
+              succeeded.push({
+                server: server.name,
+                language: lang,
+                path: result.outputPath,
+              });
+            }
           } else {
             failed.push({
               server: server.name,
@@ -586,7 +597,7 @@ export class CLIWizard {
 
     progressBar.stop();
 
-    return { succeeded, failed };
+    return { succeeded, skipped, failed };
   }
 
   /**
@@ -1158,5 +1169,69 @@ export class CLIWizard {
     }
 
     return response.regenOption;
+  }
+
+  /**
+   * Prompt user for project-specific .mcp.json path
+   *
+   * **WHY:** Users with multiple projects need to specify which project's MCP config to use
+   * **VALIDATION:** Expands ~ to home directory, validates path is within allowed directories
+   * **SECURITY:** Prevents path traversal attacks by validating resolved path
+   * **RETURNS:** Absolute path to project .mcp.json or null if skipped/cancelled
+   *
+   * @returns Project .mcp.json path or null if user skips/cancels
+   * @throws Error if path is invalid or outside allowed directories
+   */
+  async promptForProjectMCPConfig(): Promise<string | null> {
+    const response = await prompts({
+      type: 'text',
+      name: 'path',
+      message: kleur.bold('Path to project .mcp.json (optional, press Enter to skip):'),
+      initial: '',
+      validate: (value: string) => {
+        // Empty is valid (skip)
+        if (!value || !value.trim()) {
+          return true;
+        }
+
+        // Basic path validation
+        if (!value.endsWith('.mcp.json') && !value.endsWith('.json')) {
+          return 'Path must point to a .json or .mcp.json file';
+        }
+
+        return true;
+      },
+    });
+
+    // User cancelled
+    if (!response) {
+      return null;
+    }
+
+    // User skipped (empty path)
+    if (!response.path || !response.path.trim()) {
+      return null;
+    }
+
+    // Expand ~ to home directory
+    const expandedPath = response.path.replace(/^~/, os.homedir());
+
+    // Resolve to absolute path to prevent path traversal
+    const resolvedPath = path.resolve(expandedPath);
+
+    // Validate path is within allowed directories (home or current working directory)
+    const allowedDirs = [
+      path.resolve(os.homedir()),
+      path.resolve(process.cwd()),
+    ];
+
+    const isAllowed = allowedDirs.some(dir => resolvedPath.startsWith(dir));
+    if (!isAllowed) {
+      throw new Error(
+        `Invalid path: ${resolvedPath}. Path must be within home directory or current working directory.`
+      );
+    }
+
+    return resolvedPath;
   }
 }

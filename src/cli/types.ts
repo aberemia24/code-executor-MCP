@@ -329,6 +329,11 @@ export interface WrapperGenerationResult {
    * Error message (if failed)
    */
   errorMessage?: string;
+
+  /**
+   * Whether wrapper generation was skipped (file already exists and regenOption was 'missing')
+   */
+  skipped?: boolean;
 }
 
 /**

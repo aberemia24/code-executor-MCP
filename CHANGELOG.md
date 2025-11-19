@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2025-01-20
+
+### Added
+- 📂 **Project-Specific MCP Configuration** - Wizard now prompts for project `.mcp.json` path
+  - Users with multiple projects can specify which project's MCP servers to configure
+  - Project MCPs are merged with global AI tool MCPs (Claude Code, Cursor)
+  - Clear source tracking: displays which MCPs come from project vs AI tools
+  - Path validation prevents traversal attacks (restricted to home directory and current working directory)
+
+### Fixed
+- 🐛 **Wrapper Regeneration Bug** - "Generate missing only" option now works correctly
+  - **Root Cause**: `regenOption` parameter was collected but never passed to wrapper generator
+  - **Impact**: All wrappers were regenerated even when selecting "missing only" option
+  - **Fix**: Added file existence check before generation when `regenOption` is 'missing'
+  - Wrappers are now skipped if they already exist (not overwritten)
+- 📊 **Misleading Success Messages** - Wrapper generation now shows accurate counts
+  - **Before**: "Generated 1 wrapper(s)" even for skipped files
+  - **After**: "Generated X wrapper(s), Skipped Y existing wrapper(s)"
+  - Separate tracking for generated vs skipped wrappers
+
+### Security
+- 🔒 **Path Traversal Protection** - Enhanced security for project MCP config paths
+  - Validates all user-provided paths are within allowed directories
+  - Prevents `../../../etc/passwd` style attacks
+  - Resolves paths to absolute form before validation
+  - All error handlers use proper type guards (`catch (error: unknown)`)
+
 ## [0.9.0] - 2025-11-19
 
 ### Added

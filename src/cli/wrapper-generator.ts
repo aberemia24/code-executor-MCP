@@ -335,7 +335,8 @@ export class WrapperGenerator {
   async generateWrapper(
     mcp: MCPServerSelection,
     language: 'typescript' | 'python',
-    moduleFormat: ModuleFormat
+    moduleFormat: ModuleFormat,
+    regenOption: 'missing' | 'force' = 'force'
   ): Promise<WrapperGenerationResult> {
     // Validate MCP name (prevent path traversal) - throw for validation errors
     this.validateMCPName(mcp.name);
@@ -392,6 +393,26 @@ export class WrapperGenerator {
 
       // Render template
       const rendered = template(templateData);
+
+      // Check if file exists when regenOption is 'missing'
+      if (regenOption === 'missing') {
+        try {
+          await fs.stat(outputPath);
+          // File exists - skip generation
+          return {
+            success: true,
+            mcpName: mcp.name,
+            language,
+            outputPath,
+            schemaHash,
+            generatedAt: templateData.generatedAt,
+            skipped: true, // Indicate wrapper was skipped
+          };
+        } catch {
+          // File doesn't exist - proceed with generation
+          // (fs.stat throws if file not found)
+        }
+      }
 
       // Write file
       await fs.writeFile(outputPath, rendered, 'utf-8');

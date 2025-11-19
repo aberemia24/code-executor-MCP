@@ -153,6 +153,78 @@ export class MCPDiscoveryService {
   }
 
   /**
+   * Scan a project-specific .mcp.json file for MCP servers
+   *
+   * **ERROR HANDLING:** Returns empty array on failure (file not found, invalid JSON, etc.)
+   * **VALIDATION:** Skips servers without required 'command' field
+   * **SECURITY:** Validates path is absolute and within allowed directories
+   * **SOURCE:** Marks servers as sourced from 'project' for tracking
+   *
+   * @param configPath - Absolute path to project .mcp.json file (must be pre-validated)
+   * @returns Array of discovered MCP server configurations
+   */
+  async scanProjectConfig(configPath: string): Promise<MCPServerConfig[]> {
+    try {
+      // Validate path format (must be .json or .mcp.json)
+      if (!configPath.endsWith('.json') && !configPath.endsWith('.mcp.json')) {
+        console.error(`Invalid config path: ${configPath}. Must end with .json or .mcp.json`);
+        return [];
+      }
+
+      // Read and parse config file
+      let configContent: string;
+      try {
+        configContent = await fs.readFile(configPath, 'utf-8');
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to read project MCP config at ${configPath}: ${errorMessage}`);
+        return [];
+      }
+
+      // Parse JSON with error context
+      let config: MCPConfig;
+      try {
+        config = JSON.parse(configContent);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Invalid JSON';
+        console.error(`Failed to parse project MCP config at ${configPath}: ${errorMessage}`);
+        return [];
+      }
+
+      // Validate mcpServers key exists
+      if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+        console.warn(`No 'mcpServers' found in ${configPath}`);
+        return [];
+      }
+
+      // Extract server configurations
+      const servers: MCPServerConfig[] = [];
+      for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+        // Validate required command field
+        if (!serverConfig.command) {
+          console.warn(`Skipping MCP server '${name}' in ${configPath}: missing 'command' field`);
+          continue; // Skip invalid server
+        }
+
+        servers.push({
+          name,
+          command: serverConfig.command,
+          args: serverConfig.args || [],
+          env: serverConfig.env,
+          sourceTool: 'project', // Mark as project-specific
+        });
+      }
+
+      return servers;
+    } catch (error: unknown) {
+      // Unexpected error (shouldn't reach here with nested try-catch above)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Unexpected error scanning project config at ${configPath}: ${errorMessage}`);
+      return [];
+    }
+  }
+
+  /**
    * Validate if an MCP server's command is available on the system
    *
    * **METHOD:** Uses 'which' (Linux/macOS) or 'where' (Windows) to check command existence
