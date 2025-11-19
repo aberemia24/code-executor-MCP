@@ -402,3 +402,62 @@ export interface WrapperEntry {
  * **USAGE:** Determines import/export syntax in generated TypeScript wrappers
  */
 export type ModuleFormat = 'esm' | 'commonjs';
+
+/**
+ * ISyncScheduler - Platform-specific scheduler interface for daily MCP wrapper sync
+ *
+ * **RESPONSIBILITY (SRP):** Abstract scheduler API for timer/cron management
+ * **WHY:** Platform abstraction allows Linux/macOS/Windows implementations without tight coupling
+ * **IMPLEMENTATIONS:**
+ * - SystemdScheduler (Linux): Uses systemd timer units
+ * - LaunchdScheduler (macOS): Uses launchd plist files
+ * - TaskSchedulerWrapper (Windows): Uses Task Scheduler via PowerShell
+ *
+ * @example
+ * const scheduler = PlatformSchedulerFactory.create();
+ * await scheduler.install('/path/to/daily-sync.sh', '05:00');
+ */
+export interface ISyncScheduler {
+  /**
+   * Install daily sync timer
+   *
+   * **BEHAVIOR:**
+   * - Creates platform-specific timer configuration (systemd unit, launchd plist, Windows task)
+   * - Enables/starts the timer
+   * - Verifies installation succeeded
+   *
+   * **SECURITY:**
+   * - scriptPath MUST be absolute and validated (path traversal prevention)
+   * - syncTime MUST be 4-6 AM (HH:MM format, 24-hour)
+   *
+   * @param scriptPath Absolute path to daily sync script (e.g., /home/user/.code-executor/daily-sync.sh)
+   * @param syncTime Sync time in HH:MM format, 4-6 AM range (e.g., '05:00')
+   * @throws Error if installation fails or validation fails
+   * @returns Promise<void>
+   */
+  install(scriptPath: string, syncTime: string): Promise<void>;
+
+  /**
+   * Uninstall daily sync timer
+   *
+   * **BEHAVIOR:**
+   * - Stops the timer
+   * - Removes timer configuration files
+   * - Cleans up any related resources
+   *
+   * @throws Error if uninstallation fails or timer doesn't exist
+   * @returns Promise<void>
+   */
+  uninstall(): Promise<void>;
+
+  /**
+   * Check if daily sync timer is installed
+   *
+   * **BEHAVIOR:**
+   * - Checks for presence of timer configuration
+   * - Verifies timer is enabled/active
+   *
+   * @returns Promise<boolean> true if timer exists and is active
+   */
+  exists(): Promise<boolean>;
+}
