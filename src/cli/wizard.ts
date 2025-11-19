@@ -386,7 +386,47 @@ export class CLIWizard {
     // Collect language selections per server
     const selections: LanguageSelection[] = [];
 
-    // Iterate through servers and prompt for each
+    // Ask if user wants same language for all servers (faster for many servers)
+    const useSameForAll = await prompts({
+      type: 'confirm',
+      name: 'value',
+      message: `Generate wrappers with same language for all ${selectedServers.length} servers?`,
+      initial: true,
+    });
+
+    // Handle cancelled prompt
+    if (useSameForAll.value === undefined) {
+      throw new Error('Language selection cancelled by user');
+    }
+
+    // If yes, ask once and apply to all servers
+    if (useSameForAll.value === true) {
+      const languageResponse = await prompts({
+        type: 'select',
+        name: 'language',
+        message: 'Select wrapper language for all MCP servers',
+        choices: languageChoices,
+        initial: 0, // Default to TypeScript
+      });
+
+      if (!languageResponse || languageResponse.language === undefined) {
+        throw new Error('Language selection cancelled by user');
+      }
+
+      const language = languageResponse.language as WrapperLanguage;
+
+      // Apply same language to all servers
+      for (const serverStatus of selectedServers) {
+        selections.push({
+          server: serverStatus.server,
+          language,
+        });
+      }
+
+      return selections;
+    }
+
+    // Otherwise, iterate through servers and prompt for each
     for (const serverStatus of selectedServers) {
       const response = await prompts({
         type: 'select',
