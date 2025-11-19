@@ -57,14 +57,14 @@ export class TaskSchedulerWrapper implements ISyncScheduler {
    * @throws Error if validation fails or PowerShell commands fail
    */
   async install(scriptPath: string, syncTime: string): Promise<void> {
+    // Validation: scriptPath must not contain quotes or newlines (defense-in-depth, CHECK FIRST)
+    if (scriptPath.includes("'") || scriptPath.includes('"') || scriptPath.includes('\n')) {
+      throw new Error('scriptPath contains invalid characters (quotes or newlines)');
+    }
+
     // Validation: scriptPath must be absolute (Windows path)
     if (!path.isAbsolute(scriptPath)) {
       throw new Error('scriptPath must be absolute');
-    }
-
-    // Validation: scriptPath must not contain quotes or newlines (defense-in-depth)
-    if (scriptPath.includes("'") || scriptPath.includes('"') || scriptPath.includes('\n')) {
-      throw new Error('scriptPath contains invalid characters (quotes or newlines)');
     }
 
     // Validation: syncTime format (HH:MM)

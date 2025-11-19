@@ -12,7 +12,10 @@ import * as path from 'path';
 import * as os from 'os';
 import { LaunchdScheduler } from '../../../src/cli/schedulers/launchd-scheduler';
 
-describe('LaunchdScheduler', () => {
+// Skip all tests on non-macOS platforms (launchctl not available)
+const describeMacOS = process.platform === 'darwin' ? describe : describe.skip;
+
+describeMacOS('LaunchdScheduler', () => {
   let scheduler: LaunchdScheduler;
   let plistPath: string;
   const AGENT_NAME = 'com.code-executor-mcp.sync';

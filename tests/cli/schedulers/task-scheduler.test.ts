@@ -10,7 +10,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TaskSchedulerWrapper } from '../../../src/cli/schedulers/task-scheduler';
 
-describe('TaskSchedulerWrapper', () => {
+// Skip all tests on non-Windows platforms (PowerShell not available)
+const describeWindows = process.platform === 'win32' ? describe : describe.skip;
+
+describeWindows('TaskSchedulerWrapper', () => {
   let scheduler: TaskSchedulerWrapper;
   const TASK_NAME = 'CodeExecutorMCPSync';
 
