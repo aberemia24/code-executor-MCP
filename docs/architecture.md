@@ -1,8 +1,8 @@
 # Architecture Documentation
 
 **Project:** Code Executor MCP
-**Version:** 0.4.0
-**Last Updated:** 2025-11-11
+**Version:** 0.9.0
+**Last Updated:** 2025-11-19
 
 ---
 
@@ -16,6 +16,8 @@
 6. [Data Flow](#data-flow)
 7. [Concurrency & Performance](#concurrency--performance)
 8. [Design Decisions](#design-decisions)
+9. [Resilience Patterns](#resilience-patterns)
+10. [CLI Setup Wizard Architecture](#cli-setup-wizard-architecture)
 
 ---
 
@@ -1026,6 +1028,278 @@ histogram_quantile(0.95, pool_queue_wait_seconds) > 15
 
 ---
 
+## 10. CLI Setup Wizard Architecture (v0.9.0)
+
+### 10.1 Overview
+
+The CLI setup wizard provides one-command initialization of code-executor-mcp with automatic MCP server discovery, wrapper generation, and daily sync scheduling.
+
+**Entry Point:** `npm run setup` → `src/cli/index.ts`
+
+**Design Goal:** Zero-config setup with smart defaults, cross-platform support, and idempotent operation.
+
+### 10.2 Component Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     CLI Entry Point                          │
+│                   (src/cli/index.ts)                         │
+│  • Self-install check (SelfInstaller)                       │
+│  • Lock acquisition (LockFileService)                       │
+│  • Wizard orchestration                                     │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      CLIWizard                               │
+│                  (src/cli/wizard.ts)                         │
+│  • Interactive prompts (tool selection, config questions)   │
+│  • Default config pattern (press Enter to skip)             │
+│  • Idempotent setup (merge/reset/keep existing configs)     │
+└────────────┬────────────────────────────────────────────────┘
+             │
+             ├─────────────────┬──────────────────┬────────────┐
+             ▼                 ▼                  ▼            ▼
+┌──────────────────┐  ┌─────────────────┐  ┌──────────┐  ┌────────────┐
+│  ToolDetector    │  │ MCPDiscovery    │  │ Wrapper  │  │  Daily     │
+│                  │  │   Service       │  │Generator │  │   Sync     │
+│ • Detect Claude  │  │ • Scan configs: │  │ • TS/Py  │  │ • Schedule │
+│   Code install   │  │   ~/.claude.json│  │   wrapper│  │   setup    │
+│ • Validate paths │  │   .mcp.json     │  │   gen    │  │ • Platform │
+│                  │  │ • Merge servers │  │ • JSDoc  │  │   specific │
+└──────────────────┘  └─────────────────┘  └──────────┘  └────────────┘
+```
+
+### 10.3 Config Discovery & Merging
+
+**Two-Location Scan Pattern:**
+
+```typescript
+// 1. Scan global Claude Code config
+const globalServers = await discovery.scanToolConfig({
+  id: 'claude-code',
+  configPaths: {
+    linux: '~/.claude.json',
+    darwin: '~/.claude.json',
+    win32: '%USERPROFILE%\\.claude.json'
+  }
+});
+
+// 2. Scan project config
+const projectServers = await discovery.scanProjectConfig('.mcp.json');
+
+// 3. Merge (project overrides global for duplicate names)
+const mergedServers = mergeMCPServers(globalServers, projectServers);
+```
+
+**Path Expansion:**
+- `~` → `os.homedir()` (Linux/macOS)
+- `%USERPROFILE%` → `process.env.USERPROFILE` (Windows)
+- `%APPDATA%` → `process.env.APPDATA` (Windows)
+
+**Fallback Behavior:**
+- Config file not found → Prompt user for custom path or skip
+- Invalid JSON → Log error, skip tool
+- Missing `command` field → Log warning, skip server
+
+### 10.4 Wrapper Generation
+
+**Design:** Template-based code generation with schema-driven parameter types.
+
+**Templates:**
+```
+src/cli/templates/
+├── typescript-wrapper.hbs  # TypeScript wrapper template
+└── python-wrapper.hbs      # Python wrapper template
+```
+
+**Generation Flow:**
+```
+1. Fetch tool schemas from MCP servers (via schema cache)
+2. For each tool:
+   - Extract name, description, parameters (JSON Schema)
+   - Generate JSDoc comments from schema
+   - Generate TypeScript types from JSON Schema
+   - Render template with Handlebars
+3. Write wrappers to output directory
+```
+
+**Example Output:**
+```typescript
+// Before (manual)
+const file = await callMCPTool('mcp__filesystem__read_file', {
+  path: '/src/app.ts'
+});
+
+// After (wrapper)
+import { filesystem } from './mcp-wrappers';
+const file = await filesystem.readFile({ path: '/src/app.ts' });
+```
+
+**Benefits:**
+- Type-safe with IntelliSense/autocomplete
+- Self-documenting JSDoc from schemas
+- No manual tool name lookups
+- Matches actual MCP tool APIs
+
+### 10.5 Daily Sync System
+
+**Purpose:** Automatically regenerate wrappers when MCP servers change.
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│              Platform Scheduler (scheduled job)              │
+│  • macOS: launchd plist (~/.config/launchd/...)             │
+│  • Linux: systemd timer (~/.config/systemd/user/...)        │
+│  • Windows: Task Scheduler (HKCU\Software\Microsoft\...)    │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+                 ▼ (runs at 4-6 AM daily)
+┌─────────────────────────────────────────────────────────────┐
+│                 DailySyncService                             │
+│             (src/cli/daily-sync.ts)                          │
+│  1. Re-scan configs (~/.claude.json + .mcp.json)            │
+│  2. Detect changes (new/removed/modified servers)           │
+│  3. Regenerate wrappers if changes detected                 │
+│  4. Log sync status                                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Scheduler Implementation:**
+
+| Platform | Mechanism | Config Location | Command |
+|----------|-----------|-----------------|---------|
+| **macOS** | launchd plist | `~/Library/LaunchAgents/com.code-executor.daily-sync.plist` | `launchctl load/unload` |
+| **Linux** | systemd timer | `~/.config/systemd/user/code-executor-daily-sync.timer` | `systemctl --user enable/disable` |
+| **Windows** | Task Scheduler | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | `schtasks /create /delete` |
+
+**Sync Execution:**
+```bash
+# Command executed by scheduler
+npm run setup --sync-only --non-interactive
+```
+
+**Sync Logic:**
+- Reads last sync state from `~/.code-executor/last-sync.json`
+- Compares current MCP servers with last sync
+- If changes detected → regenerate wrappers
+- Update last sync state
+- Exit 0 (success) or 1 (failure)
+
+### 10.6 Lock File System
+
+**Purpose:** Prevent concurrent wizard runs (race condition protection).
+
+**Implementation:**
+```typescript
+class LockFileService {
+  private lockPath = '~/.code-executor/setup.lock';
+
+  async acquire(): Promise<void> {
+    if (await fs.exists(this.lockPath)) {
+      throw new Error('Setup wizard already running');
+    }
+    await fs.writeFile(this.lockPath, JSON.stringify({
+      pid: process.pid,
+      timestamp: Date.now()
+    }));
+  }
+
+  async release(): Promise<void> {
+    await fs.unlink(this.lockPath);
+  }
+}
+```
+
+**Protection Against:**
+- Multiple users running setup simultaneously
+- Concurrent daily sync + manual setup
+- Race conditions in wrapper file writes
+
+### 10.7 Security Considerations
+
+**Input Validation:**
+- MCP server names: `[a-zA-Z0-9_-]+` only (no special chars)
+- Config paths: No directory traversal (`.`, `..`, `~/../etc`)
+- Template variables: Escaped before rendering (XSS prevention)
+
+**Dangerous Pattern Detection:**
+- MCP names with code injection patterns rejected (not escaped)
+- Validation happens BEFORE template rendering (defense-in-depth)
+- Tests: `tests/security/template-injection.test.ts` (387 lines)
+
+**Privilege Escalation:**
+- Wizard runs with user privileges (no sudo/admin required)
+- Platform schedulers run as current user (not system-wide)
+- Lock files in user home directory (no `/tmp` race conditions)
+
+### 10.8 Component Responsibilities (SRP)
+
+| Component | Responsibility | Why Separated |
+|-----------|---------------|---------------|
+| **CLIWizard** | Interactive prompts, user flow | UI/UX logic separate from business logic |
+| **ToolDetector** | Detect AI tool installations | Tool-specific logic centralized |
+| **MCPDiscoveryService** | Scan configs for MCP servers | Config parsing separate from UI |
+| **WrapperGenerator** | Generate TS/Py wrappers | Code generation separate from discovery |
+| **DailySyncService** | Daily sync orchestration | Scheduling logic separate from setup |
+| **PlatformScheduler** | Platform detection | OS-specific logic encapsulated |
+| **LockFileService** | Concurrent access control | Shared resource protection |
+
+### 10.9 Idempotent Setup Pattern
+
+**Design Goal:** Safe to run `npm run setup` multiple times without breaking existing config.
+
+**Detection Flow:**
+```
+1. Check for existing config: ~/.code-executor/config.json
+2. If exists:
+   - Prompt user: Merge, Reset, Keep existing
+   - Merge: Combine old + new MCP servers
+   - Reset: Delete old, use new config
+   - Keep: Skip setup, exit
+3. If not exists:
+   - Create new config with defaults
+```
+
+**Merge Strategy:**
+```typescript
+function mergeMCPServers(
+  existing: MCPServerConfig[],
+  new: MCPServerConfig[]
+): MCPServerConfig[] {
+  const merged = new Map<string, MCPServerConfig>();
+
+  // Add existing servers
+  for (const server of existing) {
+    merged.set(server.name, server);
+  }
+
+  // Override with new servers (project overrides global)
+  for (const server of new) {
+    merged.set(server.name, server);
+  }
+
+  return Array.from(merged.values());
+}
+```
+
+### 10.10 Performance Characteristics
+
+| Operation | First Run | Subsequent Runs | Notes |
+|-----------|-----------|-----------------|-------|
+| Tool detection | 50-100ms | <10ms | File system checks |
+| MCP discovery | 100-200ms | 50-100ms | Schema cache helps |
+| Wrapper generation | 200-500ms | 200-500ms | Template rendering dominant |
+| Daily sync | 500ms-1s | 500ms-1s | Full re-scan + regeneration |
+
+**Optimization Opportunities:**
+- Schema cache reduces discovery latency (24h TTL)
+- Template caching (compile once, render many)
+- Parallel wrapper generation (Promise.all)
+
+---
+
 ## Architecture Validation Checklist
 
 ### Constitutional Compliance
@@ -1049,6 +1323,6 @@ histogram_quantile(0.95, pool_queue_wait_seconds) > 15
 
 ---
 
-**Document Version:** 1.0.0 (Initial architecture documentation for v0.4.0 release)
+**Document Version:** 1.1.0 (Added CLI Setup Wizard Architecture for v0.9.0)
 **Contributors:** Alexandru Eremia
-**Last Review:** 2025-11-11
+**Last Review:** 2025-11-19

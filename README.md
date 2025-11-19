@@ -46,6 +46,68 @@ await callMCPTool('mcp__git__commit', { message: review.suggestions });
 
 ## Quick Start
 
+### Option 1: Interactive Setup Wizard (Recommended)
+
+The easiest way to get started:
+
+```bash
+npm install -g code-executor-mcp
+npm run setup
+```
+
+The wizard will:
+- ✅ Discover MCP servers from your AI tool configs:
+  - Claude Code: `~/.claude.json` (global config)
+  - Cursor: `~/.cursor/mcp.json` (global config)
+  - Project: `.mcp.json` (project root, team-shared)
+  - Merges all (project overrides global for duplicates)
+- ✅ Configure MCP server settings (or use smart defaults - press Enter)
+- ✅ Generate TypeScript/Python wrappers for easy tool access
+- ✅ Set up optional daily sync to keep wrappers updated
+
+**Defaults** (press Enter to skip questions):
+- Port: 3333
+- Timeout: 30 seconds
+- Rate limit: 30 requests/minute
+- Audit logs: `~/.code-executor/audit-logs/`
+
+**Supported AI Tools**: Claude Code and Cursor (more coming soon)
+
+#### What are Wrappers?
+
+The wizard generates TypeScript/Python wrapper functions for your MCP tools:
+
+**Before** (manual):
+```typescript
+const file = await callMCPTool('mcp__filesystem__read_file', {
+  path: '/src/app.ts'
+});
+```
+
+**After** (wrapper):
+```typescript
+import { filesystem } from './mcp-wrappers';
+const file = await filesystem.readFile({ path: '/src/app.ts' });
+```
+
+**Benefits:**
+- ✅ Type-safe with full IntelliSense/autocomplete
+- ✅ Self-documenting JSDoc comments from schemas
+- ✅ No need to remember exact tool names
+- ✅ Matches actual MCP tool APIs (generated from schemas)
+
+**Keeping Wrappers Updated:**
+
+The wizard can set up daily sync (optional) to automatically regenerate wrappers:
+
+- **macOS**: launchd plist runs at 4-6 AM
+- **Linux**: systemd timer runs at 4-6 AM
+- **Windows**: Task Scheduler runs at 4-6 AM
+
+Daily sync re-scans your AI tool configs (Claude Code, Cursor) and project config for new/removed MCP servers and regenerates wrappers. You can also manually update anytime with `npm run setup`.
+
+### Option 2: Manual Configuration
+
 ### 1. Install
 
 ```bash

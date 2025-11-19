@@ -75,9 +75,9 @@ export const AI_TOOL_REGISTRY: readonly AIToolMetadata[] = [
     name: 'Cursor',
     description: 'AI-first code editor',
     configPaths: {
-      linux: '~/.cursor/config.json',
-      darwin: '~/Library/Application Support/Cursor/config.json',
-      win32: '%APPDATA%\\Cursor\\config.json',
+      linux: '~/.cursor/mcp.json',
+      darwin: '~/.cursor/mcp.json',
+      win32: '%USERPROFILE%\\.cursor\\mcp.json',
     },
     website: 'https://cursor.sh',
   },

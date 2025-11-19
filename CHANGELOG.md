@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2025-11-19
+
+### Added
+- 🧙 **Interactive CLI Setup Wizard** - One-command setup for code-executor-mcp
+  - Run `npm run setup` to automatically configure everything
+  - **What it does**:
+    - Discovers MCP servers from your AI tool configs (Claude Code: `~/.claude.json`, Cursor: `~/.cursor/mcp.json`) AND project config (`.mcp.json`)
+    - Merges global and project MCP servers (project overrides global for duplicate names)
+    - Generates TypeScript/Python wrappers for easy MCP tool access
+    - Creates default configuration (or customize with interactive prompts)
+    - Sets up optional daily sync to keep wrappers up-to-date
+  - **Why wrappers?**:
+    - Instead of: `callMCPTool('mcp__filesystem__read_file', { path: '...' })`
+    - Use: `filesystem.readFile({ path: '...' })` - cleaner, type-safe, autocomplete
+    - Generated from schemas with full JSDoc comments and TypeScript types
+    - Eliminates manual tool name lookups and parameter guessing
+  - **How they stay updated**:
+    - Optional daily sync re-scans all configs (Claude Code: `~/.claude.json`, Cursor: `~/.cursor/mcp.json`, project: `.mcp.json`) for new/removed MCP servers
+    - Regenerates wrappers automatically using platform schedulers:
+      - **macOS**: launchd plist (runs at 4-6 AM)
+      - **Linux**: systemd timer (runs at 4-6 AM)
+      - **Windows**: Task Scheduler (runs at 4-6 AM)
+    - Manual update anytime: `npm run setup`
+  - **Zero configuration**: Press Enter to accept smart defaults (port 3333, 30s timeout, 30 req/min rate limit)
+  - **Safe to re-run**: Detects existing configs and offers merge/reset/keep options
+  - **Cross-platform**: Works on Linux, macOS, and Windows with platform-specific scheduler support
+  - **AI tool support**: Claude Code and Cursor (more AI tools coming soon)
+
+### Fixed
+- Fixed Claude Code config path detection (`~/.claude.json` now resolves correctly on all platforms)
+- Fixed MCP server discovery when config files are in custom locations (now prompts for path)
+
+### Changed
+- Default proxy port changed from 3000 to 3333 (avoids common port conflicts)
+
 ## [0.8.2] - 2025-01-18
 
 ### Fixed
