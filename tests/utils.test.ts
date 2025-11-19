@@ -141,10 +141,11 @@ describe('isValidMCPToolName', () => {
     expect(isValidMCPToolName('mcp__zen__code-review')).toBe(true);
   });
 
-  it('should_reject_hyphens_in_server_names', () => {
-    // Hyphens NOT allowed in server names
-    expect(isValidMCPToolName('mcp__zen-test__codereview')).toBe(false);
-    expect(isValidMCPToolName('mcp__my-server__tool')).toBe(false);
+  it('should_accept_hyphens_in_server_names', () => {
+    // Hyphens are allowed in server names (fixes #62)
+    expect(isValidMCPToolName('mcp__code-executor__run-typescript-code')).toBe(true);
+    expect(isValidMCPToolName('mcp__figma-context__get_figma_data')).toBe(true);
+    expect(isValidMCPToolName('mcp__chrome-devtools__click')).toBe(true);
   });
 
   it('should_reject_unsupported_special_characters', () => {
