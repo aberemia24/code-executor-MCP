@@ -290,6 +290,9 @@ export class WrapperGenerator {
 
       // Write manifest atomically
       await fs.writeFile(this.manifestPath, JSON.stringify(manifest, null, 2));
+
+      // Set restrictive permissions (rw-------, user-only access)
+      await fs.chmod(this.manifestPath, 0o600);
     });
   }
 
@@ -392,6 +395,9 @@ export class WrapperGenerator {
 
       // Write file
       await fs.writeFile(outputPath, rendered, 'utf-8');
+
+      // Set file permissions (rw-r--r--)
+      await fs.chmod(outputPath, 0o644);
 
       // Update manifest (success case)
       await this.updateManifest({

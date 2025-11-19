@@ -112,10 +112,10 @@ describe('SelfInstaller - installGlobally', () => {
     vi.mocked(spawn).mockReturnValue(mockProcess as any);
 
     const result = await selfInstaller.installGlobally();
-    
+
     expect(result.success).toBe(true);
     expect(spawn).toHaveBeenCalledWith('npm', ['install', '-g', 'code-executor-mcp'], {
-      stdio: 'inherit' // Inherit stdio so user sees progress
+      stdio: ['inherit', 'inherit', 'pipe'] // Only pipe stderr for error detection
     });
   });
 

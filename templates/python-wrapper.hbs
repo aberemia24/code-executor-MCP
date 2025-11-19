@@ -13,6 +13,7 @@ See: https://github.com/aberemia24/code-executor-MCP
 
 from typing import Any, Dict, Optional, List, TypedDict
 import json
+import os
 import requests
 
 class ExecutionResult(TypedDict):
@@ -34,16 +35,28 @@ class {{pascalCase mcpName}}Client:
     Available Tools: {{toolCount}}
     """
 
-    def __init__(self, proxy_url: str = "http://localhost:3000", auth_token: str = "YOUR_AUTH_TOKEN"):
+    def __init__(
+        self,
+        proxy_url: Optional[str] = None,
+        auth_token: Optional[str] = None
+    ):
         """
         Initialize {{mcpName}} MCP client.
 
         Args:
             proxy_url: URL of code-executor-mcp proxy server
+                      (defaults to CODE_EXECUTOR_PROXY_URL env var or http://localhost:3000)
             auth_token: Bearer token for authentication
+                       (defaults to CODE_EXECUTOR_AUTH_TOKEN env var, required)
+
+        Raises:
+            ValueError: If auth_token is not provided and CODE_EXECUTOR_AUTH_TOKEN is not set
         """
-        self.proxy_url = proxy_url
-        self.auth_token = auth_token
+        self.proxy_url = proxy_url or os.getenv('CODE_EXECUTOR_PROXY_URL', 'http://localhost:3000')
+        self.auth_token = auth_token or os.getenv('CODE_EXECUTOR_AUTH_TOKEN')
+
+        if not self.auth_token:
+            raise ValueError('auth_token must be provided or CODE_EXECUTOR_AUTH_TOKEN environment variable must be set')
 
     def _call_mcp(self, tool_name: str, params: Dict[str, Any], timeout_ms: int = 30000) -> ExecutionResult:
         """
@@ -141,8 +154,8 @@ def {{snakeCase (camelCase this.name)}}(
     {{snakeCase @key}}: {{pythonType this.type}}{{#unless (lookup ../this.parameters.required @key)}} = None{{/unless}},
     {{/each}}
     {{/if}}
-    proxy_url: str = "http://localhost:3000",
-    auth_token: str = "YOUR_AUTH_TOKEN"
+    proxy_url: Optional[str] = None,
+    auth_token: Optional[str] = None
 ) -> ExecutionResult:
     """
     Convenience function for {{this.name}}.
@@ -156,10 +169,15 @@ def {{snakeCase (camelCase this.name)}}(
     {{/each}}
     {{/if}}
         proxy_url: URL of code-executor-mcp proxy server
+                   (defaults to CODE_EXECUTOR_PROXY_URL env var or http://localhost:3000)
         auth_token: Bearer token for authentication
+                   (defaults to CODE_EXECUTOR_AUTH_TOKEN env var, required)
 
     Returns:
         ExecutionResult with output and metadata
+
+    Raises:
+        ValueError: If auth_token is not provided and CODE_EXECUTOR_AUTH_TOKEN is not set
     """
     client = {{pascalCase ../mcpName}}Client(proxy_url, auth_token)
     return client.{{snakeCase (camelCase this.name)}}(

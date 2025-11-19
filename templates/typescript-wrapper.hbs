@@ -71,11 +71,18 @@ export async function {{../mcpName}}_{{camelCase this.name}}(
   `;
 
   // Execute via code-executor-mcp executeTypescript
-  const response = await fetch('http://localhost:3000', {
+  const proxyUrl = process.env.CODE_EXECUTOR_PROXY_URL || 'http://localhost:3000';
+  const authToken = process.env.CODE_EXECUTOR_AUTH_TOKEN;
+
+  if (!authToken) {
+    throw new Error('CODE_EXECUTOR_AUTH_TOKEN environment variable is required');
+  }
+
+  const response = await fetch(proxyUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer YOUR_AUTH_TOKEN' // Replace with actual token
+      'Authorization': `Bearer ${authToken}`
     },
     body: JSON.stringify({
       toolName: 'executeTypescript',

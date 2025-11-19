@@ -13,6 +13,7 @@ import AsyncLock from 'async-lock';
  * Timeout: Prevents infinite locks (default 1 hour).
  */
 export class LockFileService {
+  private static readonly MAX_RETRIES = 60; // 60 attempts × 100ms = 6 seconds max wait
   private lockPath: string;
   private timeout: number;
   private cleanupLock: AsyncLock;
@@ -27,18 +28,20 @@ export class LockFileService {
   }
 
   /**
-   * Acquire lock (blocks if held by running process, throws after 5s)
+   * Acquire lock (blocks if held by running process, throws after max retries)
    *
    * Automatically removes stale locks:
    * - Process no longer exists (zombie lock)
    * - Lock older than timeout (hung process)
    *
-   * @throws Error if lock held by running process for >5s
+   * @throws Error if lock held by running process for >5s or max retries exceeded
    */
   async acquire(): Promise<void> {
     const startTime = Date.now();
+    let attempts = 0;
 
-    while (true) {
+    while (attempts < LockFileService.MAX_RETRIES) {
+      attempts++;
       try {
         // Try to create lock file (wx flag = exclusive, fails if exists)
         await fs.mkdir(path.dirname(this.lockPath), { recursive: true });
@@ -107,11 +110,11 @@ export class LockFileService {
           const elapsed = Date.now() - startTime;
           if (elapsed > 5000) {
             throw new Error(
-              `Lock held by process ${pidNum} (waited ${Math.round(elapsed / 1000)}s)`
+              `Lock held by process ${pidNum} (waited ${Math.round(elapsed / 1000)}s, ${attempts} attempts)`
             );
           }
 
-          await this.sleep(100);
+          await this.sleep(100, attempts);
         } catch (readError: unknown) {
           const nodeReadError = readError as NodeJS.ErrnoException;
           if (nodeReadError.code === 'ENOENT') {
@@ -125,6 +128,11 @@ export class LockFileService {
         }
       }
     }
+
+    // MAX_RETRIES exceeded - throw error
+    throw new Error(
+      `Failed to acquire lock after ${LockFileService.MAX_RETRIES} attempts (${Math.round((Date.now() - startTime) / 1000)}s)`
+    );
   }
 
   /**
@@ -151,10 +159,22 @@ export class LockFileService {
   }
 
   /**
-   * Sleep helper for retry loop
+   * Sleep helper for retry loop with exponential backoff
+   *
+   * Implements exponential backoff to reduce race condition window:
+   * - Attempt 1: 100ms
+   * - Attempt 2: 200ms
+   * - Attempt 3: 400ms
+   * - Attempt 4: 800ms
+   * - Attempt 5+: 1000ms (capped)
+   *
+   * @param baseMs - Base delay in milliseconds (default 100ms)
+   * @param attempt - Current attempt number (0-indexed)
    */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  private sleep(baseMs: number, attempt: number = 0): Promise<void> {
+    // Exponential backoff: 100ms, 200ms, 400ms, 800ms, max 1000ms
+    const backoffMs = Math.min(baseMs * Math.pow(2, attempt), 1000);
+    return new Promise(resolve => setTimeout(resolve, backoffMs));
   }
 
   /**

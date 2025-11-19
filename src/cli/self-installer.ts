@@ -62,18 +62,20 @@ export class SelfInstaller {
    */
   async installGlobally(): Promise<{ success: boolean }> {
     return new Promise((resolve, reject) => {
+      // Only pipe stderr for error detection, inherit stdin/stdout for visibility
       const npmProcess = spawn('npm', ['install', '-g', this.packageName], {
-        stdio: 'inherit' // User sees real-time progress
+        stdio: ['inherit', 'inherit', 'pipe']
       });
 
       let stderrOutput = '';
 
-      // Capture stderr for error analysis (even with stdio: 'inherit')
-      if (npmProcess.stderr) {
-        npmProcess.stderr.on('data', (data) => {
-          stderrOutput += data.toString();
-        });
-      }
+      // Capture stderr for EACCES detection
+      npmProcess.stderr!.on('data', (data) => {
+        const chunk = data.toString();
+        stderrOutput += chunk;
+        // Also write to stderr so user sees errors in real-time
+        process.stderr.write(chunk);
+      });
 
       npmProcess.on('close', (code) => {
         if (code === 0) {
