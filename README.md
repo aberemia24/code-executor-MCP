@@ -6,6 +6,15 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/aberemia24/code-executor-mcp.svg)](https://hub.docker.com/r/aberemia24/code-executor-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Why Use Code Executor MCP?
+
+- **98% Token Reduction** - 141k → 1.6k tokens (load 1 executor vs 50+ tools)
+- **Sandboxed Security** - Isolated Deno/Python execution, no internet by default, audit logging
+- **Type-Safe Wrappers** - Auto-generated TypeScript/Python SDK with full IntelliSense
+- **Progressive Disclosure** - Tools loaded on-demand inside sandbox, not upfront in context
+- **Zero Config Setup** - Wizard auto-detects existing MCP servers from Claude Code/Cursor
+- **Production Ready** - 606 tests, 95%+ coverage, Docker support, rate limiting
+
 ## The Problem
 
 You can't use more than 2-3 MCP servers before context exhaustion kills you.
@@ -44,34 +53,52 @@ await callMCPTool('mcp__git__commit', { message: review.suggestions });
 
 **Result:** Unlimited MCP access, zero context overhead.
 
+### How Progressive Disclosure Works
+
+```mermaid
+sequenceDiagram
+    participant C as Claude/Cursor
+    participant E as Code Executor
+    participant M as Other MCPs
+
+    Note over C: ❌ Traditional: Load 50+ tools (141k tokens)
+
+    Note over C: ✅ Code Executor: Load 2 tools (1.6k tokens)
+    C->>E: run-typescript-code
+
+    rect rgb(240, 248, 255)
+        Note right of E: Sandbox (on-demand discovery)
+        E->>M: callMCPTool('mcp__filesystem__read_file')
+        M-->>E: Return data
+    end
+
+    E-->>C: Return result
+```
+
+Traditional MCP exposes all 47 tools upfront (141k tokens). Code Executor exposes 2 tools with outputSchema (1.6k tokens), loading others on-demand inside the sandbox when needed.
+
 ## Quick Start
 
 ### Option 1: Interactive Setup Wizard (Recommended)
 
-The easiest way to get started:
+Don't configure manually. Our wizard does everything:
 
 ```bash
 npm install -g code-executor-mcp
-npm run setup
+code-executor-mcp setup
 ```
 
-The wizard will:
-- ✅ Discover MCP servers from your AI tool configs:
-  - Claude Code: `~/.claude.json` (global config)
-  - Cursor: `~/.cursor/mcp.json` (global config)
-  - Project: `.mcp.json` (project root, team-shared)
-  - Merges all (project overrides global for duplicates)
-- ✅ Configure MCP server settings (or use smart defaults - press Enter)
-- ✅ Generate TypeScript/Python wrappers for easy tool access
-- ✅ Set up optional daily sync to keep wrappers updated
+**What the wizard does:**
+1. 🔍 Scans for existing MCP configs (Claude Code `~/.claude.json`, Cursor `~/.cursor/mcp.json`, project `.mcp.json`)
+2. ⚙️ Configures with smart defaults (or customize interactively)
+3. 📦 Generates type-safe TypeScript/Python wrappers for autocomplete
+4. 📅 Optional: Sets up daily sync to keep wrappers updated
 
-**Defaults** (press Enter to skip questions):
-- Port: 3333
-- Timeout: 30 seconds
-- Rate limit: 30 requests/minute
+**Smart defaults** (just press Enter):
+- Port: 3333 | Timeout: 30s | Rate limit: 30/min
 - Audit logs: `~/.code-executor/audit-logs/`
 
-**Supported AI Tools**: Claude Code and Cursor (more coming soon)
+**Supported AI Tools:** Claude Code and Cursor (more coming soon)
 
 #### What are Wrappers?
 
@@ -104,17 +131,17 @@ The wizard can set up daily sync (optional) to automatically regenerate wrappers
 - **Linux**: systemd timer runs at 4-6 AM
 - **Windows**: Task Scheduler runs at 4-6 AM
 
-Daily sync re-scans your AI tool configs (Claude Code, Cursor) and project config for new/removed MCP servers and regenerates wrappers. You can also manually update anytime with `npm run setup`.
+Daily sync re-scans your AI tool configs and project config for new/removed MCP servers. You can also manually update anytime with `code-executor-mcp setup`.
 
 ### Option 2: Manual Configuration
 
-### 1. Install
+#### 1. Install
 
 ```bash
 npm install -g code-executor-mcp
 ```
 
-### 2. Configure
+#### 2. Configure
 
 **IMPORTANT:** Code-executor discovers and merges MCP servers from BOTH locations:
 - **Global:** `~/.claude.json` (cross-project MCPs like voice-mode, personal tools)
@@ -187,7 +214,7 @@ ls ~/.claude.json
 }
 ```
 
-### 3. Use
+#### 3. Use
 
 Claude can now access any MCP tool through code execution:
 
@@ -200,33 +227,6 @@ console.log(result);
 ```
 
 That's it. No configuration, no allowlists, no manual tool setup.
-
-## Why This Works
-
-**Progressive Disclosure Architecture**
-
-Traditional MCP: Expose all 47 tools upfront → 141k tokens
-
-Code Executor: Expose 2 tools (with outputSchema) → tools load on-demand → 1.6k tokens
-
-**NEW in v0.7.1:** All tools now include `outputSchema` exposed via protocol - AI agents know response structure without trial execution! (MCP SDK v1.22.0)
-
-```
-┌─────────────────────────────────────┐
-│ AI Agent sees 2 tools (~1.6k tokens)│
-│  - run-typescript-code              │
-│  - run-python-code                  │
-└─────────────────────────────────────┘
-              ↓ executes
-┌─────────────────────────────────────┐
-│ Sandbox has access to ALL tools     │
-│  - mcp__filesystem__*               │
-│  - mcp__git__*                      │
-│  - mcp__browser__*                  │
-│  - mcp__zen__*                      │
-│  - ... all 47 tools                 │
-└─────────────────────────────────────┘
-```
 
 ## Real-World Example
 
@@ -282,6 +282,39 @@ console.log('Security fixes applied and committed');
 | **Deep Validation** | AJV schema validation with helpful error messages |
 | **Security** | Sandboxed (Deno/Python), allowlists, audit logs, rate limiting |
 | **Production Ready** | TypeScript, 606 tests, 95%+ coverage, Docker support |
+
+## Security (Enterprise-Grade)
+
+Code Executor doesn't just "run code." It secures it:
+
+| Feature | Implementation |
+|---------|---------------|
+| **Sandbox Isolation** | Deno (TypeScript) with restricted permissions, Pyodide WebAssembly (Python) |
+| **File Access Control** | Non-root user (UID 1001), read-only root FS, explicit project path allowlist |
+| **Network Policy** | NO internet by default, explicit domain allowlist required |
+| **Path Validation** | Symlink resolution, directory traversal protection |
+| **Audit Logging** | Every execution logged to `~/.code-executor/audit.jsonl` with timestamps |
+| **Rate Limiting** | 30 requests/min default (configurable per MCP) |
+| **Dangerous Pattern Detection** | Blocks eval, exec, __import__, pickle.loads |
+| **Schema Validation** | AJV deep validation before execution |
+| **SSRF Protection** | Blocks AWS metadata, localhost, private IPs |
+
+**Example**: Block all internet except GitHub API:
+```json
+{
+  "security": {
+    "allowedDomains": ["api.github.com"],
+    "allowedProjects": ["/home/user/projects"]
+  }
+}
+```
+
+**Sandbox Architecture:**
+- **Deno (TypeScript)**: V8 isolate, explicit permissions (--allow-read=/tmp), no shell access
+- **Pyodide (Python)**: WebAssembly sandbox, virtual filesystem, network restricted to MCP proxy only
+- **Docker (Optional)**: Non-root container, read-only root, minimal attack surface
+
+See [SECURITY.md](SECURITY.md) for complete threat analysis and security model.
 
 ## Advanced Usage
 
@@ -412,7 +445,7 @@ code-executor-mcp
 
 ```bash
 docker pull aberemia24/code-executor-mcp:latest
-docker run -p 3000:3000 aberemia24/code-executor-mcp:latest
+docker run -p 3333:3333 aberemia24/code-executor-mcp:latest
 ```
 
 See [DOCKER_TESTING.md](DOCKER_TESTING.md) for security details.
@@ -495,18 +528,6 @@ const result = await executeTypescript({
 });
 ```
 
-## Security
-
-- **Sandboxed execution:** Deno (TypeScript) and Pyodide WebAssembly (Python) - complete isolation
-- **Tool allowlists:** Whitelist specific MCP tools per execution
-- **Rate limiting:** 30 requests/60 seconds (configurable)
-- **Audit logging:** All tool calls logged with timestamps
-- **Deep validation:** AJV schema validation before execution
-- **SSRF protection:** Blocks AWS metadata, localhost, private IPs
-- **Python isolation:** Pyodide WASM sandbox - virtual FS, no host access, network restricted
-
-See [SECURITY.md](SECURITY.md) for security model and threat analysis.
-
 ## Performance
 
 | Metric | Value |
@@ -547,6 +568,16 @@ A: Yes. 606 tests, 95%+ coverage, Docker support, audit logging, rate limiting.
 
 **Q: Does this work with Claude Code only?**
 A: Built for Claude Code. Untested on other MCP clients, but should work per MCP spec.
+
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Code Quality Standards:**
+- ✅ TypeScript strict mode
+- ✅ 90%+ test coverage on business logic
+- ✅ ESLint + Prettier
+- ✅ All PRs require passing tests
 
 ## License
 
