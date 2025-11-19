@@ -188,7 +188,7 @@ describe('TaskSchedulerWrapper', () => {
     });
 
     it('should reject scriptPath with double quotes', async () => {
-      const maliciousPath = 'C:\\temp\\test.ps1"; echo INJECTED; echo "';
+      const maliciousPath = '/absolute/path/test.sh"; echo INJECTED; echo "';
       const syncTime = '05:00';
 
       await expect(scheduler.install(maliciousPath, syncTime)).rejects.toThrow(
