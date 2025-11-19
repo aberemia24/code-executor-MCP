@@ -10,13 +10,14 @@ import { CLIWizard } from '../../src/cli/wizard.js';
 import { ToolDetector } from '../../src/cli/tool-detector.js';
 import type { AIToolMetadata } from '../../src/cli/tool-registry.js';
 
-// Mock fs/promises for ToolDetector
-vi.mock('node:fs/promises', () => ({
-  access: vi.fn(),
-  constants: {
-    R_OK: 4,
-  },
-}));
+// Mock fs/promises for ToolDetector (preserve real methods for Phase 11 tests)
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual, // Preserve all real fs methods (mkdir, writeFile, rm, stat, readFile)
+    access: vi.fn(), // Mock only access for ToolDetector tests
+  };
+});
 
 // Mock prompts
 vi.mock('prompts', () => ({
@@ -1112,6 +1113,248 @@ describe('CLIWizard', () => {
         // Assert
         expect(table).toContain('1'); // Failed count
         expect(table).toContain('⚠'); // Warning icon
+      });
+    });
+  });
+
+  /**
+   * Idempotent Setup Tests (FR-8)
+   *
+   * **SCOPE:** Existing config detection, update prompts, lock file integration
+   * **TDD PHASE:** RED (failing tests)
+   */
+  describe('Idempotent Setup (FR-8)', () => {
+    describe('detectExistingConfigs()', () => {
+      it('should_returnEmpty_when_noConfigsExist', async () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const tools = [
+          { id: 'claude-code', name: 'Claude Code', configPath: '/nonexistent/.claude.json' } as AIToolMetadata,
+        ];
+
+        // Act
+        const result = await wizard.detectExistingConfigs(tools);
+
+        // Assert
+        expect(result).toEqual([]);
+      });
+
+      it('should_returnToolIds_when_configsExist', async () => {
+        // Arrange: Create temporary config files
+        const tmpDir = `/tmp/wizard-test-${Date.now()}`;
+        await fs.mkdir(tmpDir, { recursive: true });
+        const claudeConfigPath = `${tmpDir}/.claude.json`;
+        const cursorConfigPath = `${tmpDir}/.cursor-mcp.json`;
+
+        await fs.writeFile(claudeConfigPath, JSON.stringify({ mcpServers: {} }));
+        await fs.writeFile(cursorConfigPath, JSON.stringify({ mcpServers: {} }));
+
+        const wizard = new CLIWizard(toolDetector);
+        const tools = [
+          {
+            id: 'claude-code',
+            name: 'Claude Code',
+            configPath: { linux: claudeConfigPath, darwin: claudeConfigPath, win32: claudeConfigPath },
+          } as AIToolMetadata,
+          {
+            id: 'cursor',
+            name: 'Cursor',
+            configPath: { linux: cursorConfigPath, darwin: cursorConfigPath, win32: cursorConfigPath },
+          } as AIToolMetadata,
+        ];
+
+        // Act
+        const result = await wizard.detectExistingConfigs(tools);
+
+        // Assert
+        expect(result.length).toBeGreaterThan(0);
+        expect(result).toContainEqual(
+          expect.objectContaining({
+            toolId: 'claude-code',
+            exists: true,
+          })
+        );
+
+        // Cleanup
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      });
+
+      it('should_parseValidJSON_when_configExists', async () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const tools = [
+          { id: 'claude-code', name: 'Claude Code', configPath: '/home/user/.claude.json' } as AIToolMetadata,
+        ];
+
+        // Act
+        const result = await wizard.detectExistingConfigs(tools);
+
+        // Assert
+        const claudeResult = result.find((r) => r.toolId === 'claude-code');
+        if (claudeResult?.exists) {
+          expect(claudeResult).toHaveProperty('config');
+          expect(claudeResult.valid).toBe(true);
+        }
+      });
+    });
+
+    describe('promptConfigUpdate()', () => {
+      it('should_offerUpdateOptions_when_configsExist', async () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const existingConfigs = [
+          {
+            toolId: 'claude-code',
+            toolName: 'Claude Code',
+            configPath: '/home/user/.claude.json',
+            exists: true,
+            valid: true,
+            config: { mcpServers: { filesystem: {} } },
+          },
+        ];
+
+        vi.mocked(prompts).mockResolvedValueOnce({ updateOption: 'merge' });
+
+        // Act
+        const result = await wizard.promptConfigUpdate(existingConfigs);
+
+        // Assert
+        expect(result).toBe('merge');
+        expect(prompts).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'select',
+            name: 'updateOption',
+            choices: expect.arrayContaining([
+              expect.objectContaining({ value: 'keep' }),
+              expect.objectContaining({ value: 'merge' }),
+              expect.objectContaining({ value: 'reset' }),
+            ]),
+          })
+        );
+      });
+
+      it('should_returnNull_when_userCancels', async () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+        const existingConfigs = [
+          {
+            toolId: 'claude-code',
+            toolName: 'Claude Code',
+            configPath: '/home/user/.claude.json',
+            exists: true,
+            valid: true,
+            config: {},
+          },
+        ];
+
+        vi.mocked(prompts).mockResolvedValueOnce({}); // User cancelled
+
+        // Act
+        const result = await wizard.promptConfigUpdate(existingConfigs);
+
+        // Assert
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('Lock File Integration', () => {
+      it('should_acquireLock_when_wizardStarts', async () => {
+        // Arrange: Use unique lock file per test to avoid collisions
+        const lockPath = `/tmp/wizard-test-${Date.now()}-${Math.random()}.lock`;
+
+        // Cleanup any stale lock files first
+        try {
+          await fs.unlink(lockPath);
+        } catch {
+          // Ignore if file doesn't exist
+        }
+
+        const wizard = new CLIWizard(toolDetector, undefined, lockPath);
+
+        // Act & Assert
+        await expect(wizard.acquireLock()).resolves.not.toThrow();
+
+        // Cleanup
+        await wizard.releaseLock();
+      });
+
+      it('should_releaseLock_when_wizardCompletes', async () => {
+        // Arrange: Use unique lock file per test
+        const lockPath = `/tmp/wizard-test-${Date.now()}-${Math.random()}.lock`;
+
+        // Cleanup any stale lock files first
+        try {
+          await fs.unlink(lockPath);
+        } catch {
+          // Ignore if file doesn't exist
+        }
+
+        const wizard = new CLIWizard(toolDetector, undefined, lockPath);
+        await wizard.acquireLock();
+
+        // Act & Assert
+        await expect(wizard.releaseLock()).resolves.not.toThrow();
+      });
+
+      it('should_throwError_when_lockAlreadyHeld', async () => {
+        // Arrange: Use shared lock file for concurrent access test
+        const lockPath = `/tmp/wizard-test-concurrent-${Date.now()}.lock`;
+
+        // Cleanup any stale lock files first
+        try {
+          await fs.unlink(lockPath);
+        } catch {
+          // Ignore if file doesn't exist
+        }
+
+        const wizard1 = new CLIWizard(toolDetector, undefined, lockPath);
+        const wizard2 = new CLIWizard(toolDetector, undefined, lockPath);
+        await wizard1.acquireLock();
+
+        // Act & Assert
+        await expect(wizard2.acquireLock()).rejects.toThrow(/lock.*held/i);
+
+        // Cleanup
+        await wizard1.releaseLock();
+      });
+    });
+
+    describe('Wrapper Regeneration Options', () => {
+      it('should_offerRegenerationOptions_when_wrappersExist', async () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+
+        vi.mocked(prompts).mockResolvedValueOnce({ regenOption: 'missing' });
+
+        // Act
+        const result = await wizard.promptWrapperRegeneration();
+
+        // Assert
+        expect(result).toBe('missing');
+        expect(prompts).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'select',
+            name: 'regenOption',
+            choices: expect.arrayContaining([
+              expect.objectContaining({ value: 'missing' }),
+              expect.objectContaining({ value: 'force' }),
+              expect.objectContaining({ value: 'skip' }),
+            ]),
+          })
+        );
+      });
+
+      it('should_returnNull_when_userCancelsRegeneration', async () => {
+        // Arrange
+        const wizard = new CLIWizard(toolDetector);
+
+        vi.mocked(prompts).mockResolvedValueOnce({}); // User cancelled
+
+        // Act
+        const result = await wizard.promptWrapperRegeneration();
+
+        // Assert
+        expect(result).toBeNull();
       });
     });
   });

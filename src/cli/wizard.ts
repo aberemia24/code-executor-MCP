@@ -11,11 +11,13 @@ import cliProgress from 'cli-progress';
 import figlet from 'figlet';
 import kleur from 'kleur';
 import ora, { type Ora } from 'ora';
+import * as path from 'path';
 import type { ToolDetector } from './tool-detector.js';
 import type { AIToolMetadata } from './tool-registry.js';
 import type { SetupConfig, MCPServerStatusResult, LanguageSelection, WrapperLanguage, MCPServerSelection } from './types.js';
 import { setupConfigSchema } from './schemas/setup-config.schema.js';
 import type { WrapperGenerator } from './wrapper-generator.js';
+import { LockFileService } from '../services/lock-file.js';
 
 /**
  * CLIWizard - Main orchestrator for setup wizard
@@ -25,13 +27,18 @@ import type { WrapperGenerator } from './wrapper-generator.js';
 export class CLIWizard {
   private readonly ajv: Ajv;
   private readonly wrapperGenerator?: WrapperGenerator;
+  private readonly lockFileService: LockFileService;
 
   constructor(
     private readonly toolDetector: ToolDetector,
-    wrapperGenerator?: WrapperGenerator
+    wrapperGenerator?: WrapperGenerator,
+    lockFilePath?: string
   ) {
     this.ajv = new Ajv();
     this.wrapperGenerator = wrapperGenerator;
+    this.lockFileService = new LockFileService(
+      lockFilePath || path.join(process.env.HOME || process.env.USERPROFILE || '~', '.code-executor', 'setup.lock')
+    );
   }
 
   /**
@@ -928,5 +935,167 @@ export class CLIWizard {
     lines.push('');
 
     return lines.join('\n');
+  }
+
+  /**
+   * FR-8: Detect existing configuration files
+   *
+   * **TDD:** RED phase test exists, implementing GREEN
+   * **RETURNS:** Array of existing config detection results
+   *
+   * @param tools Selected AI tools to check for existing configs
+   */
+  async detectExistingConfigs(tools: AIToolMetadata[]): Promise<Array<{
+    toolId: string;
+    toolName: string;
+    configPath: string;
+    exists: boolean;
+    valid: boolean;
+    config?: any;
+  }>> {
+    const results = [];
+
+    for (const tool of tools) {
+      try {
+        const configPath = tool.configPath[process.platform as 'linux' | 'darwin' | 'win32'] || tool.configPath.linux;
+        const expandedPath = configPath.replace(/^~/, process.env.HOME || process.env.USERPROFILE || '~');
+
+        try {
+          // Check if config file exists
+          const stat = await import('fs/promises').then(fs => fs.stat(expandedPath));
+          if (!stat.isFile()) {
+            results.push({
+              toolId: tool.id,
+              toolName: tool.name,
+              configPath: expandedPath,
+              exists: false,
+              valid: false,
+            });
+            continue;
+          }
+
+          // Read and parse config
+          const configContent = await import('fs/promises').then(fs => fs.readFile(expandedPath, 'utf-8'));
+          const config = JSON.parse(configContent);
+
+          results.push({
+            toolId: tool.id,
+            toolName: tool.name,
+            configPath: expandedPath,
+            exists: true,
+            valid: true,
+            config,
+          });
+        } catch {
+          // Config doesn't exist or is invalid
+          results.push({
+            toolId: tool.id,
+            toolName: tool.name,
+            configPath: expandedPath,
+            exists: false,
+            valid: false,
+          });
+        }
+      } catch (error) {
+        // Tool config path resolution failed
+        continue;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * FR-8: Prompt user for config update options
+   *
+   * **TDD:** RED phase test exists, implementing GREEN
+   * **RETURNS:** Update option ('keep' | 'merge' | 'reset') or null if cancelled
+   *
+   * @param existingConfigs Array of existing config detection results
+   */
+  async promptConfigUpdate(existingConfigs: Array<{ toolId: string; toolName: string; configPath: string; exists: boolean; valid: boolean; config?: any }>): Promise<'keep' | 'merge' | 'reset' | null> {
+    const response = await prompts({
+      type: 'select',
+      name: 'updateOption',
+      message: kleur.bold('Existing configurations detected. How would you like to proceed?'),
+      choices: [
+        {
+          title: kleur.green('Keep existing') + kleur.gray(' - Preserve all current settings (no changes)'),
+          value: 'keep',
+        },
+        {
+          title: kleur.blue('Merge new MCPs') + kleur.gray(' - Add new MCP servers to existing configs'),
+          value: 'merge',
+        },
+        {
+          title: kleur.yellow('Full reset') + kleur.gray(' - Replace all configs (backup created first)'),
+          value: 'reset',
+        },
+      ],
+      initial: 1, // Default to merge
+    });
+
+    if (!response.updateOption) {
+      return null;
+    }
+
+    return response.updateOption;
+  }
+
+  /**
+   * FR-8: Acquire wizard lock file
+   *
+   * **TDD:** RED phase test exists, implementing GREEN
+   * **THROWS:** Error if lock already held by another wizard process
+   */
+  async acquireLock(): Promise<void> {
+    const acquired = await this.lockFileService.acquire();
+    if (!acquired) {
+      throw new Error('Wizard lock is already held by another process. Please wait for the other wizard to complete.');
+    }
+  }
+
+  /**
+   * FR-8: Release wizard lock file
+   *
+   * **TDD:** RED phase test exists, implementing GREEN
+   */
+  async releaseLock(): Promise<void> {
+    await this.lockFileService.release();
+  }
+
+  /**
+   * FR-8: Prompt user for wrapper regeneration options
+   *
+   * **TDD:** RED phase test exists, implementing GREEN
+   * **RETURNS:** Regeneration option ('missing' | 'force' | 'skip') or null if cancelled
+   */
+  async promptWrapperRegeneration(): Promise<'missing' | 'force' | 'skip' | null> {
+    const response = await prompts({
+      type: 'select',
+      name: 'regenOption',
+      message: kleur.bold('Wrapper regeneration:'),
+      choices: [
+        {
+          title: kleur.green('Generate missing only') + kleur.gray(' - Only create wrappers that don\'t exist'),
+          value: 'missing',
+        },
+        {
+          title: kleur.yellow('Force regenerate all') + kleur.gray(' - Overwrite all existing wrappers'),
+          value: 'force',
+        },
+        {
+          title: kleur.gray('Skip generation') + kleur.gray(' - Don\'t generate any wrappers'),
+          value: 'skip',
+        },
+      ],
+      initial: 0, // Default to missing only
+    });
+
+    if (!response.regenOption) {
+      return null;
+    }
+
+    return response.regenOption;
   }
 }
