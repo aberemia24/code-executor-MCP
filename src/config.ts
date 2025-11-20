@@ -9,7 +9,7 @@
 
 import { configDiscovery } from './config-discovery.js';
 import type { Config } from './config-types.js';
-import { PoolConfigSchema, type PoolConfig } from './config-types.js';
+import { PoolConfigSchema, type PoolConfig, SamplingConfigSchema, type SamplingConfig } from './config-types.js';
 import { z } from 'zod';
 
 /**
@@ -256,6 +256,75 @@ export function getPoolConfig(): PoolConfig {
       );
     }
     // Re-throw non-Zod errors (e.g., parseEnvInt errors)
+    throw error;
+  }
+}
+
+/**
+ * Get sampling configuration from environment variables
+ *
+ * Environment variables (all optional, with defaults):
+ * - CODE_EXECUTOR_SAMPLING_ENABLED: Enable sampling (default: false)
+ * - CODE_EXECUTOR_MAX_SAMPLING_ROUNDS: Max rounds per execution (default: 10, range: 1-100)
+ * - CODE_EXECUTOR_MAX_SAMPLING_TOKENS: Max tokens per execution (default: 10000, range: 100-100000)
+ * - CODE_EXECUTOR_SAMPLING_TIMEOUT_MS: Timeout per call in ms (default: 30000, range: 1000-600000)
+ * - CODE_EXECUTOR_CONTENT_FILTERING_ENABLED: Enable content filtering (default: true)
+ *
+ * @returns Validated sampling configuration with defaults
+ * @throws {z.ZodError} If environment variables are invalid (non-numeric, out of bounds, invalid boolean)
+ */
+export function getSamplingConfig(): SamplingConfig {
+  // WHY: Helper to safely parse integers with explicit NaN detection
+  // parseInt('invalid') returns NaN, which can cause subtle bugs downstream.
+  const parseEnvInt = (value: string | undefined, name: string): number | undefined => {
+    if (!value) return undefined;
+
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) {
+      throw new Error(
+        `Invalid numeric value for ${name}: "${value}". ` +
+        `Expected a valid integer.`
+      );
+    }
+    return parsed;
+  };
+
+  // WHY: Helper to safely parse booleans from env vars
+  // Environment variables are strings, need explicit conversion
+  const parseEnvBool = (value: string | undefined, name: string): boolean | undefined => {
+    if (!value) return undefined;
+
+    const lower = value.toLowerCase();
+    if (lower === 'true' || lower === '1') return true;
+    if (lower === 'false' || lower === '0') return false;
+
+    throw new Error(
+      `Invalid boolean value for ${name}: "${value}". ` +
+      `Expected "true", "false", "1", or "0".`
+    );
+  };
+
+  try {
+    return SamplingConfigSchema.parse({
+      enabled: parseEnvBool(process.env.CODE_EXECUTOR_SAMPLING_ENABLED, 'CODE_EXECUTOR_SAMPLING_ENABLED'),
+      maxRoundsPerExecution: parseEnvInt(process.env.CODE_EXECUTOR_MAX_SAMPLING_ROUNDS, 'CODE_EXECUTOR_MAX_SAMPLING_ROUNDS'),
+      maxTokensPerExecution: parseEnvInt(process.env.CODE_EXECUTOR_MAX_SAMPLING_TOKENS, 'CODE_EXECUTOR_MAX_SAMPLING_TOKENS'),
+      timeoutPerCallMs: parseEnvInt(process.env.CODE_EXECUTOR_SAMPLING_TIMEOUT_MS, 'CODE_EXECUTOR_SAMPLING_TIMEOUT_MS'),
+      contentFilteringEnabled: parseEnvBool(process.env.CODE_EXECUTOR_CONTENT_FILTERING_ENABLED, 'CODE_EXECUTOR_CONTENT_FILTERING_ENABLED'),
+    });
+  } catch (error) {
+    // WHY: Wrap Zod errors with user-friendly messages
+    if (error instanceof z.ZodError) {
+      const firstError = error.errors[0];
+      const field = firstError?.path.join('.') || 'unknown';
+      throw new Error(
+        `Invalid sampling configuration: ${field} - ${firstError?.message}. ` +
+        `Check environment variables: CODE_EXECUTOR_SAMPLING_ENABLED (true/false), ` +
+        `CODE_EXECUTOR_MAX_SAMPLING_ROUNDS (1-100), CODE_EXECUTOR_MAX_SAMPLING_TOKENS (100-100000), ` +
+        `CODE_EXECUTOR_SAMPLING_TIMEOUT_MS (1000-600000), CODE_EXECUTOR_CONTENT_FILTERING_ENABLED (true/false).`
+      );
+    }
+    // Re-throw non-Zod errors (e.g., parseEnvInt/parseEnvBool errors)
     throw error;
   }
 }

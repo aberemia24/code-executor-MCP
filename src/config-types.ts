@@ -90,12 +90,50 @@ export const ExecutorsConfigSchema = z.object({
 export type ExecutorsConfig = z.infer<typeof ExecutorsConfigSchema>;
 
 /**
+ * Sampling configuration schema (FR-7)
+ *
+ * **WHY Zod Validation?**
+ * - Prevents infinite loops via max rounds validation (1-100)
+ * - Enforces token budgets to prevent resource exhaustion (100-100000)
+ * - Self-documenting security constraints
+ * - Type-safe environment variable parsing
+ *
+ * **WHY These Limits?**
+ * - maxRoundsPerExecution: 1-100 prevents infinite loops while allowing complex workflows
+ * - maxTokensPerExecution: 100-100000 balances capability vs cost/resource protection
+ * - timeoutPerCallMs: 1s-10min ensures reasonable response times
+ * - allowedSystemPrompts: Security measure to prevent prompt injection
+ * - contentFilteringEnabled: Prevents accidental secret/PII leakage (default: true)
+ *
+ * @see specs/001-mcp-sampling/spec.md (FR-7)
+ */
+export const SamplingConfigSchema = z.object({
+  /** Enable sampling support (default: false for security) */
+  enabled: z.boolean().default(false),
+  /** Maximum sampling rounds per execution (default: 10, range: 1-100) */
+  maxRoundsPerExecution: z.number().int().min(1).max(100).default(10),
+  /** Maximum tokens per execution (default: 10000, range: 100-100000) */
+  maxTokensPerExecution: z.number().int().min(100).max(100000).default(10000),
+  /** Timeout per sampling call in milliseconds (default: 30000ms = 30s, range: 1s-10min) */
+  timeoutPerCallMs: z.number().int().min(1000).max(600000).default(30000),
+  /** Allowed system prompts (default: empty, helpful assistant, code analysis expert) */
+  allowedSystemPrompts: z
+    .array(z.string())
+    .default(['', 'You are a helpful assistant', 'You are a code analysis expert']),
+  /** Enable content filtering for secrets/PII (default: true for security) */
+  contentFilteringEnabled: z.boolean().default(true),
+});
+
+export type SamplingConfig = z.infer<typeof SamplingConfigSchema>;
+
+/**
  * Complete configuration schema
  */
 export const ConfigSchema = z.object({
   version: z.literal(1).default(1),
   security: SecurityConfigSchema.optional(),
   executors: ExecutorsConfigSchema.optional(),
+  sampling: SamplingConfigSchema.optional(),
   mcpConfigPath: z.string().default('./.mcp.json'),
 });
 
