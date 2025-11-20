@@ -19,7 +19,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { MCPProxyServer } from './mcp-proxy-server.js';
 import { StreamingProxy } from './streaming-proxy.js';
 import { SamplingBridgeServer } from './sampling-bridge-server.js';
+import { getBridgeHostname } from './docker-detection.js';
 import { sanitizeOutput, truncateOutput, formatDuration, normalizeError } from './utils.js';
+import { getAnthropicApiKey } from './config.js';
 import type { ExecutionResult, SandboxOptions, SamplingConfig } from './types.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 
@@ -103,6 +105,8 @@ export async function executePythonInSandbox(
   let samplingConfig: SamplingConfig | null = null;
   let samplingPort: number | null = null;
   let samplingToken: string | null = null;
+  // T093: Docker detection - use host.docker.internal in Docker, localhost otherwise
+  const bridgeHostname = getBridgeHostname();
 
   if (options.enableSampling) {
     // Create sampling configuration from options and defaults
@@ -122,7 +126,7 @@ export async function executePythonInSandbox(
 
     // Create Anthropic client for Claude API access
     // SECURITY: ANTHROPIC_API_KEY required when sampling enabled (Constitutional Principle 4)
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = getAnthropicApiKey();
     if (!apiKey) {
       throw new Error(
         'Sampling enabled but ANTHROPIC_API_KEY not set. ' +
@@ -132,13 +136,14 @@ export async function executePythonInSandbox(
     const anthropic = new Anthropic({ apiKey });
 
     // Create mock MCP server (we don't actually need it for sampling)
+    // NOTE: SamplingBridgeServer accepts Server | any, so no type assertion needed
     const mockMcpServer = {
       request: async () => {
         throw new Error('Not implemented');
       }
     };
 
-    samplingBridge = new SamplingBridgeServer(mockMcpServer as any, samplingConfig, undefined, anthropic);
+    samplingBridge = new SamplingBridgeServer(mockMcpServer, samplingConfig, undefined, anthropic);
 
     try {
       const bridgeInfo = await samplingBridge.start();
@@ -163,6 +168,10 @@ export async function executePythonInSandbox(
     proxyPort = proxyInfo.port;
     authToken = proxyInfo.authToken;
   } catch (error) {
+    // Clean up ALL started resources (sampling bridge, streaming proxy)
+    if (samplingBridge) {
+      await samplingBridge.stop();
+    }
     if (streamingProxy) {
       await streamingProxy.stop();
     }
@@ -190,6 +199,7 @@ export async function executePythonInSandbox(
     if (options.enableSampling && samplingPort && samplingToken) {
       pyodide.globals.set('SAMPLING_PORT', samplingPort);
       pyodide.globals.set('SAMPLING_TOKEN', samplingToken);
+      pyodide.globals.set('SAMPLING_HOSTNAME', bridgeHostname);  // T093: Docker detection
       pyodide.globals.set('SAMPLING_ENABLED', true);
     } else {
       pyodide.globals.set('SAMPLING_ENABLED', false);
@@ -290,6 +300,7 @@ async def search_tools(query: str, limit: int = 10):
 SAMPLING_ENABLED = globals().get('SAMPLING_ENABLED', False)
 SAMPLING_PORT = globals().get('SAMPLING_PORT', None)
 SAMPLING_TOKEN = globals().get('SAMPLING_TOKEN', None)
+SAMPLING_HOSTNAME = globals().get('SAMPLING_HOSTNAME', 'localhost')  # T093: Docker detection
 
 class LLM:
     """LLM sampling interface for Python sandbox"""
@@ -319,7 +330,7 @@ class LLM:
             print('[Warning] Streaming not supported in Pyodide, using non-streaming mode')
 
         response = await pyfetch(
-            f'http://localhost:{SAMPLING_PORT}/sample',
+            f'http://{SAMPLING_HOSTNAME}:{SAMPLING_PORT}/sample',
             method='POST',
             headers={
                 'Content-Type': 'application/json',
@@ -362,7 +373,7 @@ class LLM:
             raise Exception('Sampling not enabled. Pass enableSampling=True to executor options')
 
         response = await pyfetch(
-            f'http://localhost:{SAMPLING_PORT}/sample',
+            f'http://{SAMPLING_HOSTNAME}:{SAMPLING_PORT}/sample',
             method='POST',
             headers={
                 'Content-Type': 'application/json',

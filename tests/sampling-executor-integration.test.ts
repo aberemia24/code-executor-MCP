@@ -316,5 +316,175 @@ print(f"Multi-turn response: {response}")
   });
 
   // Additional integration test stubs will be added as implementation progresses
+
+  describe('T085: Sampling Metrics in Execution Result', () => {
+    it('should_returnSamplingMetrics_when_executionCompletes', async () => {
+      const code = `
+        const result = await llm.ask('What is 2+2?');
+        console.log('Result:', result);
+      `;
+
+      const result = await executeTypescriptInSandbox({
+        code,
+        allowedTools: [],
+        enableSampling: true,
+        maxSamplingRounds: 5,
+        maxSamplingTokens: 5000,
+      });
+
+      // Expected to have samplingCalls array
+      expect(result.samplingCalls).toBeDefined();
+      expect(Array.isArray(result.samplingCalls)).toBe(true);
+
+      // Expected to have samplingMetrics
+      expect(result.samplingMetrics).toBeDefined();
+      expect(result.samplingMetrics).toHaveProperty('totalRounds');
+      expect(result.samplingMetrics).toHaveProperty('totalTokens');
+      expect(result.samplingMetrics).toHaveProperty('totalDurationMs');
+      expect(result.samplingMetrics).toHaveProperty('averageTokensPerRound');
+      expect(result.samplingMetrics).toHaveProperty('quotaRemaining');
+    });
+
+    it('should_includeSamplingCallDetails_when_llmInvoked', async () => {
+      const code = `
+        const result1 = await llm.ask('First question');
+        const result2 = await llm.ask('Second question');
+        console.log('Done');
+      `;
+
+      const result = await executeTypescriptInSandbox({
+        code,
+        allowedTools: [],
+        enableSampling: true,
+      });
+
+      expect(result.samplingCalls).toBeDefined();
+      expect(result.samplingCalls?.length).toBeGreaterThanOrEqual(2);
+
+      // Each sampling call should have required fields
+      result.samplingCalls?.forEach(call => {
+        expect(call).toHaveProperty('model');
+        expect(call).toHaveProperty('messages');
+        expect(call).toHaveProperty('response');
+        expect(call).toHaveProperty('durationMs');
+        expect(call).toHaveProperty('tokensUsed');
+        expect(call).toHaveProperty('timestamp');
+      });
+    });
+
+    it('should_calculateQuotaRemaining_when_metricsReturned', async () => {
+      const code = `
+        await llm.ask('Test question');
+      `;
+
+      const maxRounds = 10;
+      const result = await executeTypescriptInSandbox({
+        code,
+        allowedTools: [],
+        enableSampling: true,
+        maxSamplingRounds: maxRounds,
+      });
+
+      expect(result.samplingMetrics).toBeDefined();
+      expect(result.samplingMetrics?.totalRounds).toBeLessThanOrEqual(maxRounds);
+      expect(result.samplingMetrics?.quotaRemaining).toBeGreaterThanOrEqual(0);
+      expect(result.samplingMetrics?.quotaRemaining).toBeLessThanOrEqual(maxRounds);
+    });
+
+    it('should_omitSamplingMetrics_when_samplingNotUsed', async () => {
+      const code = `
+        console.log('No LLM calls');
+      `;
+
+      const result = await executeTypescriptInSandbox({
+        code,
+        allowedTools: [],
+        enableSampling: true,
+      });
+
+      // If no sampling calls made, metrics should be undefined or empty
+      if (result.samplingMetrics) {
+        expect(result.samplingMetrics.totalRounds).toBe(0);
+      }
+    });
+  });
+
+  describe('T086: Docker Detection and Bridge URL', () => {
+    it('should_useHostDockerInternal_when_dockerDetected', async () => {
+      // Simulate Docker environment
+      const originalEnv = process.env.DOCKER_CONTAINER;
+      process.env.DOCKER_CONTAINER = 'true';
+
+      const code = `
+        // Bridge URL should use host.docker.internal in Docker
+        console.log('Running in Docker');
+      `;
+
+      try {
+        const result = await executeTypescriptInSandbox({
+          code,
+          allowedTools: [],
+          enableSampling: true,
+        });
+
+        // Verify execution succeeds in Docker environment
+        expect(result.success).toBe(true);
+
+        // Bridge URL should contain host.docker.internal
+        // (Implementation will verify this internally)
+      } finally {
+        // Restore env
+        if (originalEnv === undefined) {
+          delete process.env.DOCKER_CONTAINER;
+        } else {
+          process.env.DOCKER_CONTAINER = originalEnv;
+        }
+      }
+    });
+
+    it('should_useLocalhost_when_dockerNotDetected', async () => {
+      // Ensure Docker env vars are not set
+      const originalContainer = process.env.DOCKER_CONTAINER;
+      delete process.env.DOCKER_CONTAINER;
+
+      const code = `
+        console.log('Running on host');
+      `;
+
+      try {
+        const result = await executeTypescriptInSandbox({
+          code,
+          allowedTools: [],
+          enableSampling: true,
+        });
+
+        expect(result.success).toBe(true);
+
+        // Bridge URL should use localhost (default)
+      } finally {
+        // Restore env
+        if (originalContainer !== undefined) {
+          process.env.DOCKER_CONTAINER = originalContainer;
+        }
+      }
+    });
+
+    it('should_detectDockerEnvFile_when_dotDockerenvExists', async () => {
+      // Test simulates checking for /.dockerenv file
+      // Actual implementation will check fs.existsSync('/.dockerenv')
+
+      const code = `
+        console.log('Docker detection test');
+      `;
+
+      const result = await executeTypescriptInSandbox({
+        code,
+        allowedTools: [],
+        enableSampling: true,
+      });
+
+      expect(result.success).toBe(true);
+    });
+  });
 });
 

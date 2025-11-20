@@ -5,6 +5,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import AsyncLock from 'async-lock';
 import { Ajv } from 'ajv';
 import type { ValidateFunction, ErrorObject } from 'ajv';
+import { getAnthropicApiKey } from './config.js';
 import type { SamplingConfig, SamplingCall, SamplingMetrics, LLMMessage, LLMResponse } from './types.js';
 import { ContentFilter } from './security/content-filter.js';
 
@@ -163,7 +164,7 @@ export class SamplingBridgeServer {
 
     // Only require/create Anthropic client if in direct mode and not already provided
     if (this.samplingMode === 'direct' && !this.anthropic) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = getAnthropicApiKey();
       if (apiKey) {
         this.anthropic = new Anthropic({ apiKey });
         console.log('[Sampling] Using direct Anthropic API (ANTHROPIC_API_KEY provided)');

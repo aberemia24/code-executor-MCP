@@ -341,6 +341,26 @@ export function getSamplingConfig(): SamplingConfig {
   }
 }
 
+/**
+ * Get Anthropic API key from environment variable
+ *
+ * **WHY This Function?**
+ * - Centralizes access to ANTHROPIC_API_KEY environment variable
+ * - Replaces direct process.env access (violates coding standards)
+ * - Provides clear error messages when key is missing
+ * - Follows same pattern as other config functions
+ *
+ * **Security:**
+ * - API key should NEVER be in config files (secrets should be in environment)
+ * - Key is required when sampling is enabled
+ * - Validation happens at usage time (not config init time)
+ *
+ * @returns Anthropic API key or undefined if not set
+ */
+export function getAnthropicApiKey(): string | undefined {
+  return process.env.ANTHROPIC_API_KEY;
+}
+
 // For backward compatibility, export commonly used values
 // (will be removed in v2.0)
 export const DEFAULT_TIMEOUT_MS = 30000;

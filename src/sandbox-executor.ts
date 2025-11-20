@@ -8,11 +8,12 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
-import { getDenoPath } from './config.js';
+import { getDenoPath, getAnthropicApiKey } from './config.js';
 import { sanitizeOutput, truncateOutput, formatDuration, normalizeError } from './utils.js';
 import { MCPProxyServer } from './mcp-proxy-server.js';
 import { StreamingProxy } from './streaming-proxy.js';
 import { SamplingBridgeServer } from './sampling-bridge-server.js';
+import { getBridgeHostname } from './docker-detection.js';
 import Anthropic from '@anthropic-ai/sdk';
 import type { ExecutionResult, SandboxOptions, SamplingConfig, LLMResponse } from './types.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
@@ -83,6 +84,8 @@ export async function executeTypescriptInSandbox(
   let samplingConfig: SamplingConfig | null = null;
   let samplingPort: number | null = null;
   let samplingToken: string | null = null;
+  // T093: Docker detection - use host.docker.internal in Docker, localhost otherwise
+  const bridgeHostname = getBridgeHostname();
 
   if (options.enableSampling) {
     // Create sampling configuration from options and defaults
@@ -102,7 +105,7 @@ export async function executeTypescriptInSandbox(
 
     // Create Anthropic client for Claude API access
     // SECURITY: ANTHROPIC_API_KEY required when sampling enabled (Constitutional Principle 4)
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = getAnthropicApiKey();
     if (!apiKey) {
       throw new Error(
         'Sampling enabled but ANTHROPIC_API_KEY not set. ' +
@@ -112,13 +115,14 @@ export async function executeTypescriptInSandbox(
     const anthropic = new Anthropic({ apiKey });
 
     // Create mock MCP server (we don't actually need it for sampling)
+    // NOTE: SamplingBridgeServer accepts Server | any, so no type assertion needed
     const mockMcpServer = {
       request: async () => {
         throw new Error('Not implemented');
       }
     };
 
-    samplingBridge = new SamplingBridgeServer(mockMcpServer as any, samplingConfig, undefined, anthropic);
+    samplingBridge = new SamplingBridgeServer(mockMcpServer, samplingConfig, undefined, anthropic);
 
     try {
       const bridgeInfo = await samplingBridge.start();
@@ -323,7 +327,7 @@ globalThis.llm = {
   ask: async (prompt: string, options?: { systemPrompt?: string; maxTokens?: number; stream?: boolean }): Promise<string | AsyncGenerator<string>> => {
     const stream = options?.stream === true;
 
-    const response = await fetch(\`http://localhost:${samplingPort}/sample\`, {
+    const response = await fetch(\`http://${bridgeHostname}:${samplingPort}/sample\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -410,7 +414,7 @@ globalThis.llm = {
   }): Promise<string | AsyncGenerator<string>> => {
     const stream = options.stream === true;
 
-    const response = await fetch(\`http://localhost:${samplingPort}/sample\`, {
+    const response = await fetch(\`http://${bridgeHostname}:${samplingPort}/sample\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
