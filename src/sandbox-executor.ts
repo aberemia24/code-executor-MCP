@@ -101,10 +101,15 @@ export async function executeTypescriptInSandbox(
     };
 
     // Create Anthropic client for Claude API access
-    // TODO: Get API key from environment or config
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-development'
-    });
+    // SECURITY: ANTHROPIC_API_KEY required when sampling enabled (Constitutional Principle 4)
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        'Sampling enabled but ANTHROPIC_API_KEY not set. ' +
+        'Export ANTHROPIC_API_KEY=<your-key> before running with enableSampling: true'
+      );
+    }
+    const anthropic = new Anthropic({ apiKey });
 
     // Create mock MCP server (we don't actually need it for sampling)
     const mockMcpServer = {
@@ -317,12 +322,12 @@ globalThis.llm = {
    */
   ask: async (prompt: string, options?: { systemPrompt?: string; maxTokens?: number; stream?: boolean }): Promise<string | AsyncGenerator<string>> => {
     const stream = options?.stream === true;
-    
-    const response = await fetch('http://localhost:${samplingPort}/sample', {
+
+    const response = await fetch(\`http://localhost:${samplingPort}/sample\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${samplingToken}'
+        'Authorization': \`Bearer ${samplingToken}\`
       },
       body: JSON.stringify({
         messages: [{ role: 'user', content: prompt }],
@@ -356,7 +361,7 @@ globalThis.llm = {
             if (done) break;
             
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
+            const lines = buffer.split('\\n');
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
             
             for (const line of lines) {
@@ -404,12 +409,12 @@ globalThis.llm = {
     stream?: boolean
   }): Promise<string | AsyncGenerator<string>> => {
     const stream = options.stream === true;
-    
-    const response = await fetch('http://localhost:${samplingPort}/sample', {
+
+    const response = await fetch(\`http://localhost:${samplingPort}/sample\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${samplingToken}'
+        'Authorization': \`Bearer ${samplingToken}\`
       },
       body: JSON.stringify({
         messages: options.messages,
@@ -443,7 +448,7 @@ globalThis.llm = {
             if (done) break;
             
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
+            const lines = buffer.split('\\n');
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
             
             for (const line of lines) {

@@ -40,6 +40,33 @@ export const ExecuteTypescriptInputSchema = z.object({
   skipDangerousPatternCheck: z.boolean()
     .optional()
     .describe('Skip dangerous pattern validation (defense-in-depth only). Default: false (validation enabled). Can be overridden by CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS env var or config file.'),
+
+  // MCP Sampling parameters (optional, disabled by default)
+  enableSampling: z.boolean()
+    .default(false)
+    .describe('Enable MCP Sampling (recursive LLM calls). Default: false'),
+
+  maxSamplingRounds: z.number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Override maximum sampling rounds per execution. Default: 10'),
+
+  maxSamplingTokens: z.number()
+    .int()
+    .min(1000)
+    .max(100000)
+    .optional()
+    .describe('Override maximum sampling tokens per execution. Default: 10000'),
+
+  samplingSystemPrompt: z.string()
+    .optional()
+    .describe('System prompt for sampling calls. Must be in allowlist if specified.'),
+
+  allowedSamplingModels: z.array(z.string())
+    .default(['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022'])
+    .describe('Allowlist of permitted LLM models for sampling. Default: Haiku + Sonnet'),
 }).strict();
 
 /**
@@ -68,6 +95,33 @@ export const ExecutePythonInputSchema = z.object({
   skipDangerousPatternCheck: z.boolean()
     .optional()
     .describe('Skip dangerous pattern validation (defense-in-depth only). Default: false (validation enabled). Can be overridden by CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS env var or config file.'),
+
+  // MCP Sampling parameters (optional, disabled by default)
+  enableSampling: z.boolean()
+    .default(false)
+    .describe('Enable MCP Sampling (recursive LLM calls). Default: false'),
+
+  maxSamplingRounds: z.number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Override maximum sampling rounds per execution. Default: 10'),
+
+  maxSamplingTokens: z.number()
+    .int()
+    .min(1000)
+    .max(100000)
+    .optional()
+    .describe('Override maximum sampling tokens per execution. Default: 10000'),
+
+  samplingSystemPrompt: z.string()
+    .optional()
+    .describe('System prompt for sampling calls. Must be in allowlist if specified.'),
+
+  allowedSamplingModels: z.array(z.string())
+    .default(['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022'])
+    .describe('Allowlist of permitted LLM models for sampling. Default: Haiku + Sonnet'),
 }).strict();
 
 /**

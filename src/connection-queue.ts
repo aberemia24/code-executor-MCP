@@ -85,7 +85,7 @@ export class ConnectionQueue {
    * @throws Error if queue is full (returns 503 to client)
    */
   async enqueue(request: QueuedRequest): Promise<void> {
-    return await this.lock.acquire('queue-write', async () => {
+    return await this.lock.acquire('queue', async () => {
       // Check capacity
       if (this.queue.length >= this.config.maxSize) {
         throw new Error(
@@ -117,7 +117,7 @@ export class ConnectionQueue {
    * @returns Next request or null if queue empty
    */
   async dequeue(): Promise<QueuedRequest | null> {
-    return await this.lock.acquire('queue-read', async () => {
+    return await this.lock.acquire('queue', async () => {
       // Cleanup expired requests first
       await this.cleanupExpiredInternal();
 
@@ -140,7 +140,7 @@ export class ConnectionQueue {
    * Called periodically (e.g., every 5s) or before dequeue
    */
   async cleanupExpired(): Promise<void> {
-    await this.lock.acquire('queue-write', async () => {
+    await this.lock.acquire('queue', async () => {
       await this.cleanupExpiredInternal();
     });
   }

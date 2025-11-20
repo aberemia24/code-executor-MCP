@@ -51,6 +51,10 @@ export interface ExecutionResult {
   toolCallSummary?: ToolCallSummaryEntry[];
   /** WebSocket URL for streaming output (optional) */
   streamUrl?: string;
+  /** Sampling calls made during execution (if sampling was enabled) */
+  samplingCalls?: SamplingCall[];
+  /** Sampling metrics and quota information (if sampling was enabled) */
+  samplingMetrics?: SamplingMetrics;
 }
 
 /**
@@ -86,6 +90,16 @@ export interface SandboxOptions {
   streaming?: boolean;
   /** Skip dangerous pattern validation (defense-in-depth protection) */
   skipDangerousPatternCheck?: boolean;
+  /** Enable MCP Sampling (recursive LLM calls) */
+  enableSampling?: boolean;
+  /** Override maximum sampling rounds per execution */
+  maxSamplingRounds?: number;
+  /** Override maximum sampling tokens per execution */
+  maxSamplingTokens?: number;
+  /** System prompt for sampling calls */
+  samplingSystemPrompt?: string;
+  /** Allowlist of permitted LLM models for sampling */
+  allowedSamplingModels?: string[];
 }
 
 /**
@@ -304,4 +318,122 @@ export interface ErrorResponse {
   suggestion?: string;
   /** Tools called before failure */
   toolCallsMade?: string[];
+}
+
+// ============================================================================
+// MCP SAMPLING TYPES
+// ============================================================================
+
+/**
+ * Sampling configuration for LLM calls within sandbox execution
+ */
+export interface SamplingConfig {
+  /** Whether sampling is enabled (must be explicitly set to true) */
+  enabled: boolean;
+  /** Maximum rounds per execution (default: 10) */
+  maxRoundsPerExecution: number;
+  /** Maximum tokens per execution across all rounds (default: 10000) */
+  maxTokensPerExecution: number;
+  /** Timeout per sampling call in milliseconds (default: 30000) */
+  timeoutPerCallMs: number;
+  /** Allowlist of permitted system prompts */
+  allowedSystemPrompts: string[];
+  /** Whether content filtering is enabled */
+  contentFilteringEnabled: boolean;
+  /** Allowlist of permitted LLM models for security */
+  allowedModels: string[];
+}
+
+/**
+ * Individual sampling call record
+ */
+export interface SamplingCall {
+  /** LLM model used (e.g., 'claude-3-5-haiku-20241022') */
+  model: string;
+  /** Conversation messages sent to LLM */
+  messages: LLMMessage[];
+  /** System prompt used (if any) - captured for audit logging */
+  systemPrompt?: string;
+  /** LLM response (filtered if content filtering enabled) */
+  response: LLMResponse;
+  /** Duration of the sampling call in milliseconds */
+  durationMs: number;
+  /** Tokens used in this call */
+  tokensUsed: number;
+  /** ISO timestamp when call was made */
+  timestamp: string;
+}
+
+/**
+ * Sampling execution metrics and quota tracking
+ */
+export interface SamplingMetrics {
+  /** Total number of sampling rounds completed */
+  totalRounds: number;
+  /** Total tokens consumed across all rounds */
+  totalTokens: number;
+  /** Total duration across all sampling calls in milliseconds */
+  totalDurationMs: number;
+  /** Average tokens per round */
+  averageTokensPerRound: number;
+  /** Remaining quota (rounds and tokens) */
+  quotaRemaining: {
+    rounds: number;
+    tokens: number;
+  };
+}
+
+/**
+ * LLM message format (compatible with Claude API)
+ */
+export interface LLMMessage {
+  /** Message role */
+  role: 'user' | 'assistant' | 'system';
+  /** Message content (can be text or complex objects) */
+  content: string | Array<{ type: 'text'; text: string } | { type: 'image'; source: any }>;
+}
+
+/**
+ * LLM response format (compatible with Claude API)
+ */
+export interface LLMResponse {
+  /** Response content */
+  content: Array<{ type: 'text'; text: string }>;
+  /** Reason the response ended */
+  stopReason?: string;
+  /** Model used for generation */
+  model: string;
+  /** Token usage information */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+}
+
+/**
+ * Sampling audit log entry for security monitoring
+ */
+export interface SamplingAuditEntry {
+  /** ISO timestamp */
+  timestamp: string;
+  /** Execution ID for correlation */
+  executionId: string;
+  /** Round number within execution */
+  round: number;
+  /** Model used */
+  model: string;
+  /** SHA-256 hash of prompt messages (no plaintext) */
+  promptHash: string;
+  /** SHA-256 hash of response (no plaintext) */
+  responseHash: string;
+  /** Tokens used in this call */
+  tokensUsed: number;
+  /** Call duration in milliseconds */
+  durationMs: number;
+  /** Call status */
+  status: 'success' | 'error' | 'rate_limited' | 'timeout';
+  /** Error message if failed */
+  errorMessage?: string;
+  /** Content violations detected */
+  contentViolations?: Array<{ type: string; count: number }>;
 }
