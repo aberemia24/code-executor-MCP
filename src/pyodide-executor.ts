@@ -483,7 +483,7 @@ _stdout_capture.getvalue()
         toolCallSummary: proxyServer.getToolCallSummary(),
         streamUrl,
         samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
-        samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
+        samplingMetrics: samplingBridge ? await samplingBridge.getSamplingMetrics('execution') : undefined,
       };
     } else {
       return {
@@ -495,7 +495,7 @@ _stdout_capture.getvalue()
         toolCallSummary: proxyServer.getToolCallSummary(),
         streamUrl,
         samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
-        samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
+        samplingMetrics: samplingBridge ? await samplingBridge.getSamplingMetrics('execution') : undefined,
       };
     }
 
@@ -513,7 +513,7 @@ _stdout_capture.getvalue()
       toolCallsMade: proxyServer.getToolCalls(),
       streamUrl,
       samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
-      samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
+      samplingMetrics: samplingBridge ? await samplingBridge.getSamplingMetrics('execution') : undefined,
     };
   } finally {
     // Cleanup

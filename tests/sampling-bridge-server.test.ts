@@ -392,7 +392,7 @@ describe('SamplingBridgeServer', () => {
       expect(statuses.length).toBe(10);
 
       // Verify metrics show exactly 10 rounds
-      const metrics = bridge.getSamplingMetrics('test');
+      const metrics = await bridge.getSamplingMetrics('test');
       expect(metrics.totalRounds).toBe(10);
     });
   });

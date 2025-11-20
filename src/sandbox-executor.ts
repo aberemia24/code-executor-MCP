@@ -538,7 +538,7 @@ await import('file://${userCodeFile}');
 
     const result = await Promise.race([
       new Promise<ExecutionResult>((resolve) => {
-        denoProcess.on('close', (code) => {
+        denoProcess.on('close', async (code) => {
           // Clear timeout when process exits normally
           if (timeoutHandle) {
             clearTimeout(timeoutHandle);
@@ -560,7 +560,7 @@ await import('file://${userCodeFile}');
               toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
               samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
-              samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
+              samplingMetrics: samplingBridge ? await samplingBridge.getSamplingMetrics('execution') : undefined,
             });
           } else {
             // Broadcast failure to streaming clients

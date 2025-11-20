@@ -327,10 +327,12 @@ print(f"Multi-turn response: {response}")
       const result = await executeTypescriptInSandbox({
         code,
         allowedTools: [],
+        timeoutMs: 10000,
+        permissions: { read: [], write: [], net: [] },
         enableSampling: true,
         maxSamplingRounds: 5,
         maxSamplingTokens: 5000,
-      });
+      }, mcpClientPool);
 
       // Expected to have samplingCalls array
       expect(result.samplingCalls).toBeDefined();
@@ -355,8 +357,10 @@ print(f"Multi-turn response: {response}")
       const result = await executeTypescriptInSandbox({
         code,
         allowedTools: [],
+        timeoutMs: 10000,
+        permissions: { read: [], write: [], net: [] },
         enableSampling: true,
-      });
+      }, mcpClientPool);
 
       expect(result.samplingCalls).toBeDefined();
       expect(result.samplingCalls?.length).toBeGreaterThanOrEqual(2);
@@ -381,14 +385,16 @@ print(f"Multi-turn response: {response}")
       const result = await executeTypescriptInSandbox({
         code,
         allowedTools: [],
+        timeoutMs: 10000,
+        permissions: { read: [], write: [], net: [] },
         enableSampling: true,
         maxSamplingRounds: maxRounds,
-      });
+      }, mcpClientPool);
 
       expect(result.samplingMetrics).toBeDefined();
       expect(result.samplingMetrics?.totalRounds).toBeLessThanOrEqual(maxRounds);
-      expect(result.samplingMetrics?.quotaRemaining).toBeGreaterThanOrEqual(0);
-      expect(result.samplingMetrics?.quotaRemaining).toBeLessThanOrEqual(maxRounds);
+      expect(result.samplingMetrics?.quotaRemaining.rounds).toBeGreaterThanOrEqual(0);
+      expect(result.samplingMetrics?.quotaRemaining.rounds).toBeLessThanOrEqual(maxRounds);
     });
 
     it('should_omitSamplingMetrics_when_samplingNotUsed', async () => {
@@ -399,8 +405,10 @@ print(f"Multi-turn response: {response}")
       const result = await executeTypescriptInSandbox({
         code,
         allowedTools: [],
+        timeoutMs: 10000,
+        permissions: { read: [], write: [], net: [] },
         enableSampling: true,
-      });
+      }, mcpClientPool);
 
       // If no sampling calls made, metrics should be undefined or empty
       if (result.samplingMetrics) {
@@ -424,8 +432,10 @@ print(f"Multi-turn response: {response}")
         const result = await executeTypescriptInSandbox({
           code,
           allowedTools: [],
+          timeoutMs: 10000,
+          permissions: { read: [], write: [], net: [] },
           enableSampling: true,
-        });
+        }, mcpClientPool);
 
         // Verify execution succeeds in Docker environment
         expect(result.success).toBe(true);
@@ -455,8 +465,10 @@ print(f"Multi-turn response: {response}")
         const result = await executeTypescriptInSandbox({
           code,
           allowedTools: [],
+          timeoutMs: 10000,
+          permissions: { read: [], write: [], net: [] },
           enableSampling: true,
-        });
+        }, mcpClientPool);
 
         expect(result.success).toBe(true);
 
@@ -480,8 +492,10 @@ print(f"Multi-turn response: {response}")
       const result = await executeTypescriptInSandbox({
         code,
         allowedTools: [],
+        timeoutMs: 10000,
+        permissions: { read: [], write: [], net: [] },
         enableSampling: true,
-      });
+      }, mcpClientPool);
 
       expect(result.success).toBe(true);
     });
