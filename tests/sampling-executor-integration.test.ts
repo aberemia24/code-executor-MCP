@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { executeTypescriptInSandbox } from '../src/sandbox-executor.js';
+import { executePythonInSandbox } from '../src/pyodide-executor.js';
 import { MCPClientPool } from '../src/mcp-client-pool.js';
 import { initConfig } from '../src/config.js';
 import nock from 'nock';
@@ -170,7 +171,96 @@ describe('Sampling Executor Integration', () => {
     });
   });
 
-  // Python Sampling tests will be implemented in Phase 8
+  describe('Python Sampling', () => {
+    // Python tests need real timers (Pyodide async operations don't work with fake timers)
+    beforeEach(() => {
+      vi.useRealTimers();
+    });
+
+    afterEach(() => {
+      vi.useFakeTimers(); // Restore fake timers for other tests
+    });
+
+    it('should_throwError_when_samplingDisabledAndLlmAskCalled', async () => {
+      const code = `
+try:
+    result = await llm.ask("Hello, world!")
+    print(result)
+except Exception as error:
+    print(f"Error: {error}")
+    raise error
+      `;
+
+      const result = await executePythonInSandbox(
+        {
+          code,
+          allowedTools: [],
+          timeoutMs: 5000,
+          enableSampling: false,
+          permissions: { read: [], write: [], net: [] }
+        },
+        mcpClientPool
+      );
+
+      // Should fail because sampling is disabled
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Sampling not enabled');
+    });
+
+    it('should_returnClaudeResponse_when_llmAskCalled', async () => {
+      const code = `
+response = await llm.ask("What is the capital of France?")
+print(f"Response: {response}")
+      `;
+
+      const result = await executePythonInSandbox(
+        {
+          code,
+          allowedTools: [],
+          timeoutMs: 10000,
+          enableSampling: true,
+          permissions: { read: [], write: [], net: [] }
+        },
+        mcpClientPool
+      );
+
+      expect(result.success).toBe(true);
+      expect(result).toHaveProperty('samplingCalls');
+      expect(result.samplingCalls).toBeDefined();
+      expect(result.samplingCalls!.length).toBeGreaterThanOrEqual(1);
+      expect(result.samplingCalls![0]).toHaveProperty('response');
+      expect(result.samplingCalls![0].response.content[0].text).toBe('Mock Claude response for integration test');
+    });
+
+    it('should_supportMultiTurn_when_llmThinkCalledWithMessages', async () => {
+      const code = `
+messages = [
+    {"role": "user", "content": "Hello"},
+    {"role": "assistant", "content": "Hi there!"},
+    {"role": "user", "content": "How are you?"}
+]
+response = await llm.think(messages=messages)
+print(f"Multi-turn response: {response}")
+      `;
+
+      const result = await executePythonInSandbox(
+        {
+          code,
+          allowedTools: [],
+          timeoutMs: 10000,
+          enableSampling: true,
+          permissions: { read: [], write: [], net: [] }
+        },
+        mcpClientPool
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.samplingCalls).toBeDefined();
+      expect(result.samplingCalls!.length).toBeGreaterThanOrEqual(1);
+      expect(result.samplingCalls![0].messages).toHaveLength(3);
+      expect(result.samplingCalls![0].response.content[0].text).toBe('Mock Claude response for integration test');
+    });
+  });
 
   describe('Sampling Metadata', () => {
     it('should_returnSamplingMetrics_when_executionCompletes', async () => {

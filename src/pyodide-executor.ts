@@ -15,10 +15,12 @@
  */
 
 import { loadPyodide, type PyodideInterface } from 'pyodide';
+import Anthropic from '@anthropic-ai/sdk';
 import { MCPProxyServer } from './mcp-proxy-server.js';
 import { StreamingProxy } from './streaming-proxy.js';
+import { SamplingBridgeServer } from './sampling-bridge-server.js';
 import { sanitizeOutput, truncateOutput, formatDuration, normalizeError } from './utils.js';
-import type { ExecutionResult, SandboxOptions } from './types.js';
+import type { ExecutionResult, SandboxOptions, SamplingConfig } from './types.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 
 /**
@@ -96,6 +98,61 @@ export async function executePythonInSandbox(
     }
   }
 
+  // Start sampling bridge if enabled (Phase 8: FR-2 Python Sampling Interface)
+  let samplingBridge: SamplingBridgeServer | null = null;
+  let samplingConfig: SamplingConfig | null = null;
+  let samplingPort: number | null = null;
+  let samplingToken: string | null = null;
+
+  if (options.enableSampling) {
+    // Create sampling configuration from options and defaults
+    samplingConfig = {
+      enabled: true,
+      maxRoundsPerExecution: options.maxSamplingRounds || 10,
+      maxTokensPerExecution: options.maxSamplingTokens || 10000,
+      timeoutPerCallMs: 30000, // 30 seconds per call
+      allowedSystemPrompts: [
+        '', // Empty prompt always allowed
+        'You are a helpful assistant',
+        'You are a code analysis expert'
+      ],
+      contentFilteringEnabled: true,
+      allowedModels: options.allowedSamplingModels || ['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022']
+    };
+
+    // Create Anthropic client for Claude API access
+    // SECURITY: ANTHROPIC_API_KEY required when sampling enabled (Constitutional Principle 4)
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        'Sampling enabled but ANTHROPIC_API_KEY not set. ' +
+        'Export ANTHROPIC_API_KEY=<your-key> before running with enableSampling: true'
+      );
+    }
+    const anthropic = new Anthropic({ apiKey });
+
+    // Create mock MCP server (we don't actually need it for sampling)
+    const mockMcpServer = {
+      request: async () => {
+        throw new Error('Not implemented');
+      }
+    };
+
+    samplingBridge = new SamplingBridgeServer(mockMcpServer as any, samplingConfig, undefined, anthropic);
+
+    try {
+      const bridgeInfo = await samplingBridge.start();
+      samplingPort = bridgeInfo.port;
+      samplingToken = bridgeInfo.authToken;
+    } catch (error) {
+      // Clean up on failure
+      if (streamingProxy) {
+        await streamingProxy.stop();
+      }
+      throw new Error(`Failed to start sampling bridge: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   // Start MCP proxy server (authenticated tool access)
   const proxyServer = new MCPProxyServer(mcpClientPool, options.allowedTools);
   let proxyPort: number;
@@ -128,6 +185,15 @@ export async function executePythonInSandbox(
     // Phase 1: Inject call_mcp_tool function
     pyodide.globals.set('PROXY_PORT', proxyPort);
     pyodide.globals.set('AUTH_TOKEN', authToken);
+
+    // Inject sampling bridge credentials if sampling is enabled
+    if (options.enableSampling && samplingPort && samplingToken) {
+      pyodide.globals.set('SAMPLING_PORT', samplingPort);
+      pyodide.globals.set('SAMPLING_TOKEN', samplingToken);
+      pyodide.globals.set('SAMPLING_ENABLED', true);
+    } else {
+      pyodide.globals.set('SAMPLING_ENABLED', false);
+    }
 
     await pyodide.runPythonAsync(`
 import json
@@ -219,6 +285,107 @@ async def search_tools(query: str, limit: int = 10):
     keywords = query.split()
     tools = await discover_mcp_tools(search_terms=keywords)
     return tools[:limit]
+
+# LLM Sampling helpers (Phase 8: FR-2 Python Sampling Interface)
+SAMPLING_ENABLED = globals().get('SAMPLING_ENABLED', False)
+SAMPLING_PORT = globals().get('SAMPLING_PORT', None)
+SAMPLING_TOKEN = globals().get('SAMPLING_TOKEN', None)
+
+class LLM:
+    """LLM sampling interface for Python sandbox"""
+
+    async def ask(self, prompt: str, system_prompt: str = '', max_tokens: int = 1000, stream: bool = False):
+        """
+        Simple LLM query - returns response text
+
+        Args:
+            prompt: The prompt to send to the LLM
+            system_prompt: Optional system prompt
+            max_tokens: Maximum tokens to generate (default: 1000)
+            stream: Enable streaming (not supported in Pyodide)
+
+        Returns:
+            str: The LLM response text
+
+        Raises:
+            Exception: If sampling not enabled or call fails
+        """
+        if not SAMPLING_ENABLED:
+            raise Exception('Sampling not enabled. Pass enableSampling=True to executor options')
+
+        # Pyodide streaming limitation: Always use non-streaming mode
+        # WebAssembly fetch API doesn't support streaming response bodies
+        if stream:
+            print('[Warning] Streaming not supported in Pyodide, using non-streaming mode')
+
+        response = await pyfetch(
+            f'http://localhost:{SAMPLING_PORT}/sample',
+            method='POST',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {SAMPLING_TOKEN}'
+            },
+            body=json.dumps({
+                'messages': [{'role': 'user', 'content': prompt}],
+                'model': 'claude-3-5-haiku-20241022',
+                'systemPrompt': system_prompt,
+                'maxTokens': max_tokens,
+                'stream': False  # Always False for Pyodide
+            })
+        )
+
+        if response.status != 200:
+            error = await response.json()
+            raise Exception(error.get('error', 'Sampling call failed'))
+
+        result = await response.json()
+        return result.get('response', '')
+
+    async def think(self, messages: list, model: str = 'claude-3-5-haiku-20241022',
+                   max_tokens: int = 1000, system_prompt: str = ''):
+        """
+        Multi-turn conversation - supports message history
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+            model: Model to use (default: claude-3-5-haiku-20241022)
+            max_tokens: Maximum tokens to generate (default: 1000)
+            system_prompt: Optional system prompt
+
+        Returns:
+            str: The LLM response text
+
+        Raises:
+            Exception: If sampling not enabled or call fails
+        """
+        if not SAMPLING_ENABLED:
+            raise Exception('Sampling not enabled. Pass enableSampling=True to executor options')
+
+        response = await pyfetch(
+            f'http://localhost:{SAMPLING_PORT}/sample',
+            method='POST',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {SAMPLING_TOKEN}'
+            },
+            body=json.dumps({
+                'messages': messages,
+                'model': model,
+                'systemPrompt': system_prompt,
+                'maxTokens': max_tokens,
+                'stream': False  # Always False for Pyodide
+            })
+        )
+
+        if response.status != 200:
+            error = await response.json()
+            raise Exception(error.get('error', 'Sampling call failed'))
+
+        result = await response.json()
+        return result.get('response', '')
+
+# Create global llm instance
+llm = LLM()
     `);
 
     console.error('✓ MCP tool access injected into Python environment');
@@ -304,6 +471,8 @@ _stdout_capture.getvalue()
         toolCallsMade: proxyServer.getToolCalls(),
         toolCallSummary: proxyServer.getToolCallSummary(),
         streamUrl,
+        samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
+        samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
       };
     } else {
       return {
@@ -314,6 +483,8 @@ _stdout_capture.getvalue()
         toolCallsMade: proxyServer.getToolCalls(),
         toolCallSummary: proxyServer.getToolCallSummary(),
         streamUrl,
+        samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
+        samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
       };
     }
 
@@ -330,9 +501,14 @@ _stdout_capture.getvalue()
       executionTimeMs: Date.now() - startTime,
       toolCallsMade: proxyServer.getToolCalls(),
       streamUrl,
+      samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
+      samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
     };
   } finally {
     // Cleanup
+    if (samplingBridge) {
+      await samplingBridge.stop();
+    }
     if (streamingProxy) {
       await streamingProxy.stop();
     }
