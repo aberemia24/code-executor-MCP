@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getSamplingConfig } from '../src/config.js';
-import type { SamplingConfig } from '../src/config-types.js';
+import { SamplingConfigSchema, type SamplingConfig } from '../src/config-types.js';
 
 describe('Sampling Configuration Validation (FR-7)', () => {
   // Store original env vars
@@ -20,6 +20,7 @@ describe('Sampling Configuration Validation (FR-7)', () => {
     delete process.env.CODE_EXECUTOR_MAX_SAMPLING_ROUNDS;
     delete process.env.CODE_EXECUTOR_MAX_SAMPLING_TOKENS;
     delete process.env.CODE_EXECUTOR_SAMPLING_TIMEOUT_MS;
+    delete process.env.CODE_EXECUTOR_ALLOWED_SYSTEM_PROMPTS;
     delete process.env.CODE_EXECUTOR_CONTENT_FILTERING_ENABLED;
   });
 
@@ -100,23 +101,42 @@ describe('Sampling Configuration Validation (FR-7)', () => {
 
   describe('T074: Per-Execution Overrides', () => {
     it('should_supportPerExecutionOverrides_when_parametersProvided', () => {
-      // This test validates that execution-level parameters override config
-      // The actual override happens in executor code, not config loading
-      // We'll test the schema accepts these parameters
+      // Validate that schema accepts override-style parameters
+      const baseConfig = getSamplingConfig();
 
-      // This test is a placeholder - actual override logic is tested in executor integration tests
-      // The config function itself doesn't handle per-execution overrides
-      const config = getSamplingConfig();
-      expect(config).toBeDefined();
+      // Test that schema accepts runtime parameter overrides
+      const overrideParams = {
+        ...baseConfig,
+        maxRoundsPerExecution: 5, // Override at execution time
+        maxTokensPerExecution: 5000,
+        timeoutPerCallMs: 15000,
+      };
+
+      const result = SamplingConfigSchema.safeParse(overrideParams);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.maxRoundsPerExecution).toBe(5);
+        expect(result.data.maxTokensPerExecution).toBe(5000);
+        expect(result.data.timeoutPerCallMs).toBe(15000);
+      }
     });
 
     it('should_allowEnablingSampling_when_globallyDisabled', () => {
-      // Per-execution enableSampling parameter should work even if config.enabled = false
-      // This is validated in executor tests, not config tests
+      // Validate enabling sampling at execution time even if globally disabled
+      const baseConfig = getSamplingConfig();
+      expect(baseConfig.enabled).toBe(false); // Default is disabled
 
-      // Config returns default (enabled: false), executor will override
-      const config = getSamplingConfig();
-      expect(config.enabled).toBe(false); // Default
+      // Test runtime override to enable sampling
+      const executionParams = {
+        ...baseConfig,
+        enabled: true, // Override at execution time
+      };
+
+      const result = SamplingConfigSchema.safeParse(executionParams);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.enabled).toBe(true);
+      }
     });
   });
 
@@ -159,6 +179,24 @@ describe('Sampling Configuration Validation (FR-7)', () => {
       expect(typeof config.contentFilteringEnabled).toBe('boolean');
       expect(config.enabled).toBe(true);
       expect(config.contentFilteringEnabled).toBe(false);
+    });
+
+    it('should_parseCommaSeparatedList_when_allowedPromptsSet', () => {
+      process.env.CODE_EXECUTOR_ALLOWED_SYSTEM_PROMPTS = 'Prompt 1, Prompt 2, Prompt 3';
+
+      const config = getSamplingConfig();
+
+      expect(Array.isArray(config.allowedSystemPrompts)).toBe(true);
+      expect(config.allowedSystemPrompts).toEqual(['Prompt 1', 'Prompt 2', 'Prompt 3']);
+      expect(config.allowedSystemPrompts.length).toBe(3);
+    });
+
+    it('should_trimWhitespace_when_parsingCommaSeparatedList', () => {
+      process.env.CODE_EXECUTOR_ALLOWED_SYSTEM_PROMPTS = '  Prompt A  ,  Prompt B  ,  Prompt C  ';
+
+      const config = getSamplingConfig();
+
+      expect(config.allowedSystemPrompts).toEqual(['Prompt A', 'Prompt B', 'Prompt C']);
     });
   });
 
