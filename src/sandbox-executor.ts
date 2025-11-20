@@ -12,7 +12,9 @@ import { getDenoPath } from './config.js';
 import { sanitizeOutput, truncateOutput, formatDuration, normalizeError } from './utils.js';
 import { MCPProxyServer } from './mcp-proxy-server.js';
 import { StreamingProxy } from './streaming-proxy.js';
-import type { ExecutionResult, SandboxOptions } from './types.js';
+import { SamplingBridgeServer } from './sampling-bridge-server.js';
+import Anthropic from '@anthropic-ai/sdk';
+import type { ExecutionResult, SandboxOptions, SamplingConfig, LLMResponse } from './types.js';
 import type { MCPClientPool } from './mcp-client-pool.js';
 
 // Configuration constants
@@ -74,6 +76,63 @@ export async function executeTypescriptInSandbox(
       executionTimeMs: Date.now() - startTime,
       streamUrl,
     };
+  }
+
+  // Start sampling bridge server if sampling is enabled
+  let samplingBridge: SamplingBridgeServer | null = null;
+  let samplingConfig: SamplingConfig | null = null;
+  let samplingPort: number | null = null;
+  let samplingToken: string | null = null;
+
+  if (options.enableSampling) {
+    // Create sampling configuration from options and defaults
+    samplingConfig = {
+      enabled: true,
+      maxRoundsPerExecution: options.maxSamplingRounds || 10,
+      maxTokensPerExecution: options.maxSamplingTokens || 10000,
+      timeoutPerCallMs: 30000, // 30 seconds per call
+      allowedSystemPrompts: [
+        '', // Empty prompt always allowed
+        'You are a helpful assistant',
+        'You are a code analysis expert'
+      ],
+      contentFilteringEnabled: true,
+      allowedModels: options.allowedSamplingModels || ['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022']
+    };
+
+    // Create Anthropic client for Claude API access
+    // TODO: Get API key from environment or config
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-development'
+    });
+
+    // Create mock MCP server (we don't actually need it for sampling)
+    const mockMcpServer = {
+      request: async () => {
+        throw new Error('Not implemented');
+      }
+    };
+
+    samplingBridge = new SamplingBridgeServer(mockMcpServer as any, samplingConfig, undefined, anthropic);
+
+    try {
+      const bridgeInfo = await samplingBridge.start();
+      samplingPort = bridgeInfo.port;
+      samplingToken = bridgeInfo.authToken;
+    } catch (error) {
+      // Clean up on failure
+      await proxyServer.stop();
+      if (streamingProxy) {
+        await streamingProxy.stop();
+      }
+      return {
+        success: false,
+        output: '',
+        error: normalizeError(error, 'Failed to start sampling bridge server').message,
+        executionTimeMs: Date.now() - startTime,
+        streamUrl,
+      };
+    }
   }
 
   // Temp file for user code (will be cleaned up in finally)
@@ -246,6 +305,191 @@ globalThis.searchTools = async (query: string, limit: number = 10): Promise<Tool
   return tools.slice(0, limit);
 };
 
+// MCP Sampling helpers (injected when sampling is enabled)
+${options.enableSampling ? `
+// LLM sampling helpers for TypeScript
+globalThis.llm = {
+  /**
+   * Simple LLM query - returns response text
+   * @param prompt - The prompt to send to the LLM
+   * @param options - Optional parameters (systemPrompt, maxTokens, stream)
+   * @returns Promise<string> - The LLM response text (or async generator if streaming)
+   */
+  ask: async (prompt: string, options?: { systemPrompt?: string; maxTokens?: number; stream?: boolean }): Promise<string | AsyncGenerator<string>> => {
+    const stream = options?.stream === true;
+    
+    const response = await fetch('http://localhost:${samplingPort}/sample', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${samplingToken}'
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: prompt }],
+        model: 'claude-3-5-haiku-20241022',
+        systemPrompt: options?.systemPrompt || '',
+        maxTokens: options?.maxTokens || 1000,
+        stream
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Sampling call failed');
+    }
+
+    // Handle streaming response
+    if (stream && response.headers.get('content-type')?.includes('text/event-stream')) {
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('Streaming response body not available');
+      }
+
+      // Return async generator for streaming chunks
+      return (async function* () {
+        let buffer = '';
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') {
+                  return;
+                }
+                try {
+                  const parsed = JSON.parse(data);
+                  if (parsed.type === 'chunk') {
+                    yield parsed.content;
+                  } else if (parsed.type === 'done') {
+                    return;
+                  } else if (parsed.error) {
+                    throw new Error(parsed.error);
+                  }
+                } catch (e) {
+                  // Skip invalid JSON
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      })();
+    }
+
+    // Non-streaming response
+    const result = await response.json();
+    return result.content[0]?.text || '';
+  },
+
+  /**
+   * Multi-turn conversation with LLM
+   * @param options - Conversation options (messages, model, maxTokens, systemPrompt, stream)
+   * @returns Promise<string> - The LLM response text (or async generator if streaming)
+   */
+  think: async (options: {
+    messages: Array<{role: 'user'|'assistant'|'system', content: string}>,
+    model?: string,
+    maxTokens?: number,
+    systemPrompt?: string,
+    stream?: boolean
+  }): Promise<string | AsyncGenerator<string>> => {
+    const stream = options.stream === true;
+    
+    const response = await fetch('http://localhost:${samplingPort}/sample', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${samplingToken}'
+      },
+      body: JSON.stringify({
+        messages: options.messages,
+        model: options.model || 'claude-3-5-haiku-20241022',
+        systemPrompt: options.systemPrompt || '',
+        maxTokens: options.maxTokens || 1000,
+        stream
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Sampling call failed');
+    }
+
+    // Handle streaming response
+    if (stream && response.headers.get('content-type')?.includes('text/event-stream')) {
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('Streaming response body not available');
+      }
+
+      // Return async generator for streaming chunks
+      return (async function* () {
+        let buffer = '';
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') {
+                  return;
+                }
+                try {
+                  const parsed = JSON.parse(data);
+                  if (parsed.type === 'chunk') {
+                    yield parsed.content;
+                  } else if (parsed.type === 'done') {
+                    return;
+                  } else if (parsed.error) {
+                    throw new Error(parsed.error);
+                  }
+                } catch (e) {
+                  // Skip invalid JSON
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      })();
+    }
+
+    // Non-streaming response
+    const result = await response.json();
+    return result.content[0]?.text || '';
+  }
+};
+` : `
+// Sampling not enabled - throw error if llm helpers are called
+globalThis.llm = {
+  ask: async () => {
+    throw new Error('Sampling not enabled. Pass enableSampling: true');
+  },
+  think: async () => {
+    throw new Error('Sampling not enabled. Pass enableSampling: true');
+  }
+};
+`}
+
 // Import and execute user code from temp file
 await import('file://${userCodeFile}');
 `;
@@ -345,6 +589,8 @@ await import('file://${userCodeFile}');
               toolCallsMade: proxyServer.getToolCalls(),
               toolCallSummary: proxyServer.getToolCallSummary(),
               streamUrl,
+              samplingCalls: samplingBridge ? samplingBridge.getSamplingCalls() : undefined,
+              samplingMetrics: samplingBridge ? samplingBridge.getSamplingMetrics('execution') : undefined,
             });
           } else {
             // Broadcast failure to streaming clients
@@ -419,6 +665,11 @@ await import('file://${userCodeFile}');
 
     // Stop MCP proxy server
     await proxyServer.stop();
+
+    // Stop sampling bridge server
+    if (samplingBridge) {
+      await samplingBridge.stop();
+    }
 
     // Clean up temp file
     if (tempFileCreated) {

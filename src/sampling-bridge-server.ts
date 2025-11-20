@@ -239,10 +239,12 @@ export class SamplingBridgeServer {
       }
 
       // Check rate limits (atomic check with AsyncLock for concurrency safety)
+      // Note: For streaming, rounds are checked here, tokens checked at end
       const rateLimitExceeded = await this.rateLimitLock.acquire('rate-limit-check', async () => {
         if (this.roundsUsed >= this.config.maxRoundsPerExecution) {
           return { type: 'rounds' as const, exceeded: true };
         }
+        // For non-streaming, also check token limit upfront
         if (this.tokensUsed >= this.config.maxTokensPerExecution) {
           return { type: 'tokens' as const, exceeded: true };
         }
@@ -289,11 +291,152 @@ export class SamplingBridgeServer {
       }
 
       const maxTokens = Math.min(body.maxTokens || 1000, 10000); // Cap at 10k tokens
+      const stream = body.stream === true; // Check if streaming is requested
 
       // Convert MCP message format to Anthropic format
       const anthropicMessages = this.convertMessagesToAnthropic(body.messages);
       const systemPrompt = body.systemPrompt;
 
+      // Handle streaming response
+      if (stream) {
+        try {
+          // Set SSE headers for streaming
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no' // Disable nginx buffering
+          });
+
+          // Increment round counter for streaming (tokens counted at end)
+          // Rate limit already checked above
+          await this.rateLimitLock.acquire('rate-limit-update', async () => {
+            this.roundsUsed++;
+          });
+
+          // Create streaming request
+          const streamResponse = this.anthropic.messages.stream({
+            model,
+            max_tokens: maxTokens,
+            messages: anthropicMessages,
+            ...(systemPrompt && { system: systemPrompt }),
+          });
+
+          let fullText = '';
+          let inputTokens = 0;
+          let outputTokens = 0;
+
+          // Stream chunks as they arrive
+          for await (const event of streamResponse) {
+            if (event.type === 'message_start') {
+              // Message started
+            } else if (event.type === 'content_block_delta') {
+              // Content chunk
+              if (event.delta.type === 'text_delta') {
+                const chunk = event.delta.text;
+                fullText += chunk;
+                
+                // Apply content filtering if enabled (per chunk)
+                let filteredChunk = chunk;
+                if (this.config.contentFilteringEnabled) {
+                  const { filtered } = this.contentFilter.scan(chunk);
+                  filteredChunk = filtered;
+                }
+                
+                // Send chunk to client (handle client disconnect gracefully)
+                try {
+                  res.write(`data: ${JSON.stringify({ type: 'chunk', content: filteredChunk })}\n\n`);
+                } catch (error) {
+                  // Client disconnected, stop streaming
+                  console.error('Client disconnected during stream:', error);
+                  return;
+                }
+              }
+            } else if (event.type === 'message_delta') {
+              // Usage information
+              if (event.usage) {
+                inputTokens = event.usage.input_tokens || inputTokens;
+                outputTokens = event.usage.output_tokens || outputTokens;
+              }
+            } else if (event.type === 'message_stop') {
+              // Message complete
+              const tokensUsed = inputTokens + outputTokens;
+              
+              // Check token limit after streaming completes
+              const tokenLimitCheck = await this.rateLimitLock.acquire('rate-limit-update', async () => {
+                if (this.tokensUsed + tokensUsed > this.config.maxTokensPerExecution) {
+                  return { exceeded: true, metrics: this.getSamplingMetrics('current') };
+                }
+                this.tokensUsed += tokensUsed;
+                return { exceeded: false };
+              });
+
+              if (tokenLimitCheck.exceeded) {
+                // Decrement rounds since we're rejecting due to token limit
+                await this.rateLimitLock.acquire('rate-limit-update', async () => {
+                  this.roundsUsed--;
+                });
+                
+                if (tokenLimitCheck.metrics) {
+                  try {
+                    res.write(`data: ${JSON.stringify({ error: `Token limit exceeded: ${tokenLimitCheck.metrics.totalTokens + tokensUsed}/${this.config.maxTokensPerExecution} tokens would be used` })}\n\n`);
+                    res.end();
+                  } catch (error) {
+                    console.error('Error sending token limit error:', error);
+                  }
+                }
+                return;
+              }
+
+              // Create sampling call record
+              const callDuration = Date.now() - callStartTime;
+              const samplingCall: SamplingCall = {
+                model,
+                messages: body.messages,
+                response: {
+                  content: [{ type: 'text', text: fullText }],
+                  stopReason: 'end_turn',
+                  model,
+                  usage: {
+                    inputTokens,
+                    outputTokens
+                  }
+                },
+                durationMs: callDuration,
+                tokensUsed,
+                timestamp: new Date().toISOString()
+              };
+
+              this.samplingCalls.push(samplingCall);
+
+              // Send completion event
+              try {
+                res.write(`data: ${JSON.stringify({ type: 'done', content: fullText, usage: { inputTokens, outputTokens } })}\n\n`);
+                res.end();
+              } catch (error) {
+                console.error('Error sending completion event:', error);
+              }
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Claude API streaming error:', error);
+          // Decrement rounds since stream failed
+          await this.rateLimitLock.acquire('rate-limit-update', async () => {
+            this.roundsUsed--;
+          });
+          
+          try {
+            res.write(`data: ${JSON.stringify({ error: 'Claude API streaming error', details: error instanceof Error ? error.message : 'Unknown error' })}\n\n`);
+            res.end();
+          } catch (writeError) {
+            console.error('Error sending streaming error:', writeError);
+          }
+          return;
+        }
+      }
+
+      // Non-streaming response (existing code)
       let claudeResponse: Awaited<ReturnType<typeof this.anthropic.messages.create>>;
 
       try {

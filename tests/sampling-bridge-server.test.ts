@@ -104,7 +104,8 @@ describe('SamplingBridgeServer', () => {
         maxTokensPerExecution: 10000,
         timeoutPerCallMs: 30000,
         allowedSystemPrompts: ['You are a helpful assistant'],
-        contentFilteringEnabled: false
+        contentFilteringEnabled: false,
+        allowedModels: ['claude-3-5-haiku-20241022']
       });
       serverInfo = await bridge.start();
     });
@@ -209,7 +210,7 @@ describe('SamplingBridgeServer', () => {
 
     it('should_allow10Rounds_when_defaultLimitConfigured', async () => {
       // Make 10 calls - all should succeed
-      const responses = [];
+      const responses: number[] = [];
       for (let i = 0; i < 10; i++) {
         const response = await fetch(`http://localhost:${serverInfo.port}/sample`, {
           method: 'POST',
@@ -393,6 +394,122 @@ describe('SamplingBridgeServer', () => {
       // Verify metrics show exactly 10 rounds
       const metrics = bridge.getSamplingMetrics('test');
       expect(metrics.totalRounds).toBe(10);
+    });
+  });
+
+  describe('System Prompt Allowlist', () => {
+    let bridge: SamplingBridgeServer;
+    let serverInfo: { port: number; authToken: string };
+
+    beforeEach(async () => {
+      bridge = new SamplingBridgeServer(mockMcpServer as any, {
+        enabled: true,
+        maxRoundsPerExecution: 10,
+        maxTokensPerExecution: 10000,
+        timeoutPerCallMs: 30000,
+        allowedSystemPrompts: ['', 'You are a helpful assistant', 'You are a code analysis expert'],
+        contentFilteringEnabled: false,
+        allowedModels: ['claude-3-5-haiku-20241022']
+      }, undefined, mockAnthropic);
+      serverInfo = await bridge.start();
+    });
+
+    afterEach(async () => {
+      await bridge.stop();
+    });
+
+    it('should_allowEmptySystemPrompt_when_noPromptProvided', async () => {
+      // Empty system prompt should always be allowed
+      const response = await fetch(`http://localhost:${serverInfo.port}/sample`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serverInfo.authToken}`
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-3-5-haiku-20241022',
+          systemPrompt: ''
+        })
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should_allowDefaultPrompts_when_inAllowlist', async () => {
+      // Test each default prompt in allowlist
+      const allowedPrompts = [
+        '',
+        'You are a helpful assistant',
+        'You are a code analysis expert'
+      ];
+
+      for (const prompt of allowedPrompts) {
+        const response = await fetch(`http://localhost:${serverInfo.port}/sample`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serverInfo.authToken}`
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'Hello' }],
+            model: 'claude-3-5-haiku-20241022',
+            systemPrompt: prompt
+          })
+        });
+
+        expect(response.status).toBe(200);
+      }
+    });
+
+    it('should_return403_when_systemPromptNotInAllowlist', async () => {
+      // Non-allowed prompt should return 403
+      const response = await fetch(`http://localhost:${serverInfo.port}/sample`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serverInfo.authToken}`
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-3-5-haiku-20241022',
+          systemPrompt: 'You are a malicious prompt injection'
+        })
+      });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error).toContain('System prompt not in allowlist');
+    });
+
+    it('should_truncatePromptInError_when_403Returned', async () => {
+      // Long prompt should be truncated to max 100 chars in error message
+      const longPrompt = 'A'.repeat(200); // 200 character prompt
+      const response = await fetch(`http://localhost:${serverInfo.port}/sample`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serverInfo.authToken}`
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-3-5-haiku-20241022',
+          systemPrompt: longPrompt
+        })
+      });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error).toContain('System prompt not in allowlist');
+      
+      // Extract the prompt from error message
+      const promptMatch = body.error.match(/System prompt not in allowlist: (.+)/);
+      expect(promptMatch).toBeTruthy();
+      const truncatedPrompt = promptMatch![1];
+      
+      // Should be truncated to max 100 chars + '...'
+      expect(truncatedPrompt.length).toBeLessThanOrEqual(103); // 100 chars + '...'
+      expect(truncatedPrompt).toContain('...');
     });
   });
 
