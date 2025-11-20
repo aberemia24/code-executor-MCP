@@ -282,6 +282,11 @@ Example:
                 timeoutMs: input.timeoutMs,
                 permissions: input.permissions,
                 skipDangerousPatternCheck: skipPatternCheck,
+                enableSampling: input.enableSampling,
+                maxSamplingRounds: input.maxSamplingRounds,
+                maxSamplingTokens: input.maxSamplingTokens,
+                samplingSystemPrompt: input.samplingSystemPrompt,
+                allowedSamplingModels: input.allowedSamplingModels,
               },
               this.mcpClientPool
             );
@@ -775,6 +780,10 @@ Returns:
     process.exit(0);
   }
 }
+
+// Export functions for testing
+export { executeTypescriptInSandbox as executeTypescript } from './sandbox-executor.js';
+export { executePythonInSandbox as executePython } from './pyodide-executor.js';
 
 // Start server
 const server = new CodeExecutorServer();
