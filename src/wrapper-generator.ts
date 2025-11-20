@@ -13,8 +13,54 @@ import { homedir } from 'os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { getMCPConfigPath } from './config.js';
+import { Ajv, type ErrorObject } from 'ajv';
 
 const WRAPPERS_DIR = path.join(homedir(), '.code-executor', 'wrappers');
+
+// AJV schema for validating MCP tool schemas (Type Safety: Deep recursive validation)
+const MCP_TOOL_SCHEMA_VALIDATOR = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['name', 'inputSchema'],
+    properties: {
+      name: { type: 'string' },
+      description: { type: 'string' },
+      inputSchema: {
+        type: 'object',
+        required: ['type'],
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']
+          },
+          properties: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                type: {
+                  oneOf: [
+                    { type: 'string' },
+                    { type: 'array', items: { type: 'string' } }
+                  ]
+                },
+                description: { type: 'string' },
+                enum: { type: 'array' },
+                items: { type: 'object' },
+                properties: { type: 'object' }
+              }
+            }
+          },
+          required: {
+            type: 'array',
+            items: { type: 'string' }
+          }
+        }
+      }
+    }
+  }
+} as const;
 
 interface MCPToolSchema {
   name: string;
@@ -155,6 +201,17 @@ async function fetchToolSchemas(serverName: string, config: ServerConfig): Promi
   try {
     await client.connect(transport);
     const response = await client.listTools();
+
+    // AJV validation: Ensure tool schemas match expected structure
+    const ajv = new Ajv({ strict: false }); // strict: false to allow additionalProperties
+    const validate = ajv.compile(MCP_TOOL_SCHEMA_VALIDATOR);
+
+    if (!validate(response.tools)) {
+      const errors = validate.errors || [];
+      const errorDetails = errors.map((e: ErrorObject) => `${e.instancePath} ${e.message}`).join(', ');
+      throw new Error(`Invalid tool schemas from ${serverName}: ${errorDetails}`);
+    }
+
     return response.tools as MCPToolSchema[];
   } catch (error) {
     console.error(`Failed to fetch schemas from ${serverName}:`, error);
