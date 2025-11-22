@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2025-11-22
+
+### 🚨 CRITICAL BUGFIX
+
+**v1.0.1 COMPLETELY BROKEN - All wrapper generation fails**
+
+#### Fixed
+
+- **Wrapper Generation Templates** - Fixed template schema mismatch causing 100% failure rate
+  - **Error:** `"Cannot read properties of undefined (reading 'properties')"`
+  - **Root Cause:** Templates expected `this.parameters.properties` but MCP tools provide `this.inputSchema.properties`
+  - **Impact:** v1.0.1 users cannot generate any wrappers (0% success rate)
+  - **Fix:** Changed all template references from `this.parameters` to `this.inputSchema`
+  - **Files:** `templates/typescript-wrapper.hbs`, `templates/python-wrapper.hbs`
+  - **Tested:** Wrapper generation now works correctly
+
+**Upgrade Immediately:** If you installed v1.0.1, upgrade to v1.0.2 to fix wrapper generation.
+
 ## [1.0.1] - 2025-11-22
 
 ### 🚀 Phase 10: Daily Sync Scheduler Integration
