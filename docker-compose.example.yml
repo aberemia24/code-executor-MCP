@@ -1,0 +1,243 @@
+##############################################################################
+# Code Executor MCP - Docker Compose Example
+#
+# Complete configuration template with all environment variables
+# Copy this file to docker-compose.yml and customize for your deployment
+##############################################################################
+
+version: '3.8'
+
+services:
+  code-executor-mcp:
+    build: .
+    container_name: code-executor-mcp
+    image: code-executor-mcp:latest
+
+    # Configuration volume (auto-generated on first run)
+    volumes:
+      - ./config:/app/config
+
+    # ========================================================================
+    # ENVIRONMENT VARIABLES - Complete Configuration
+    # ========================================================================
+    environment:
+      # ----------------------------------------------------------------------
+      # SAMPLING CONFIGURATION (Optional - MCP works without sampling)
+      # ----------------------------------------------------------------------
+
+      # Enable AI sampling feature (default: false)
+      CODE_EXECUTOR_SAMPLING_ENABLED: "false"
+
+      # Select AI provider (options: anthropic, openai, gemini, grok, perplexity)
+      CODE_EXECUTOR_AI_PROVIDER: "gemini"
+
+      # ----------------------------------------------------------------------
+      # API KEYS (Provider-specific - only needed if sampling is enabled)
+      # ----------------------------------------------------------------------
+      # Get your keys from:
+      # - Anthropic: https://console.anthropic.com/settings/keys
+      # - OpenAI: https://platform.openai.com/api-keys
+      # - Gemini: https://aistudio.google.com/app/apikey
+      # - Grok: https://console.x.ai/
+      # - Perplexity: https://www.perplexity.ai/settings/api
+
+      # Anthropic Claude API key
+      # ANTHROPIC_API_KEY: "sk-ant-xxxxx"
+
+      # OpenAI GPT API key
+      # OPENAI_API_KEY: "sk-xxxxx"
+
+      # Google Gemini API key (RECOMMENDED: Cheapest at $0.10/$0.40 per MTok)
+      # GEMINI_API_KEY: "your-gemini-key-here"
+
+      # xAI Grok API key
+      # GROK_API_KEY: "xxxxx"
+
+      # Perplexity API key
+      # PERPLEXITY_API_KEY: "xxxxx"
+
+      # Custom base URL for OpenAI-compatible providers (optional)
+      # Useful for Grok, Perplexity, or custom OpenAI proxies
+      # CODE_EXECUTOR_AI_BASE_URL: "https://api.x.ai/v1"
+
+      # ----------------------------------------------------------------------
+      # MODEL CONFIGURATION
+      # ----------------------------------------------------------------------
+
+      # Allowed models (comma-separated list for security)
+      # Default: Latest cost-effective models (January 2025)
+      # CODE_EXECUTOR_ALLOWED_MODELS: "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gpt-4o-mini,claude-haiku-4-5-20251001"
+
+      # ----------------------------------------------------------------------
+      # RATE LIMITING & QUOTAS
+      # ----------------------------------------------------------------------
+
+      # Maximum sampling rounds per execution (default: 10, range: 1-100)
+      CODE_EXECUTOR_MAX_SAMPLING_ROUNDS: "10"
+
+      # Maximum tokens per execution (default: 10000, range: 100-100000)
+      CODE_EXECUTOR_MAX_SAMPLING_TOKENS: "10000"
+
+      # Timeout per sampling call in milliseconds (default: 30000ms = 30s)
+      CODE_EXECUTOR_SAMPLING_TIMEOUT_MS: "30000"
+
+      # ----------------------------------------------------------------------
+      # SECURITY & VALIDATION
+      # ----------------------------------------------------------------------
+
+      # Allowed system prompts (comma-separated for security)
+      # Default: empty prompt, helpful assistant, code analysis expert
+      # CODE_EXECUTOR_ALLOWED_SYSTEM_PROMPTS: ",You are a helpful assistant,You are a code analysis expert"
+
+      # Enable content filtering for secrets/PII (default: true)
+      CODE_EXECUTOR_CONTENT_FILTERING_ENABLED: "true"
+
+      # Enable audit logging (default: true)
+      ENABLE_AUDIT_LOG: "true"
+
+      # Audit log path (default: ~/.code-executor/audit.log)
+      # CODE_EXECUTOR_AUDIT_LOG_PATH: "/app/logs/audit.log"
+
+      # Allowed project paths (colon-separated for security)
+      # Example: /app/projects:/home/user/work
+      # ALLOWED_PROJECTS: ""
+
+      # ----------------------------------------------------------------------
+      # GENERAL MCP SERVER CONFIGURATION
+      # ----------------------------------------------------------------------
+
+      # Execution timeout in milliseconds (default: 120000ms = 2min)
+      CODE_EXECUTOR_TIMEOUT_MS: "120000"
+
+      # Schema cache TTL in milliseconds (default: 86400000ms = 24h)
+      CODE_EXECUTOR_SCHEMA_CACHE_TTL_MS: "86400000"
+
+      # Rate limit (requests per minute)
+      CODE_EXECUTOR_RATE_LIMIT_RPM: "60"
+
+      # Skip dangerous pattern check (default: false)
+      # WARNING: Only enable for trusted environments
+      # CODE_EXECUTOR_SKIP_DANGEROUS_PATTERNS: "false"
+
+      # ----------------------------------------------------------------------
+      # SANDBOX CONFIGURATION
+      # ----------------------------------------------------------------------
+
+      # Deno path for TypeScript execution
+      DENO_PATH: "/usr/local/bin/deno"
+
+      # Python execution (default: true, but sandbox not ready - see PYTHON_SANDBOX_READY)
+      PYTHON_ENABLED: "true"
+
+      # Python sandbox ready flag (default: false)
+      # WARNING: Only enable after Pyodide implementation (issue #59)
+      # PYTHON_SANDBOX_READY: "false"
+
+      # ----------------------------------------------------------------------
+      # DOCKER & DEPLOYMENT
+      # ----------------------------------------------------------------------
+
+      # Node environment
+      NODE_ENV: "production"
+
+      # Docker container flag
+      DOCKER_CONTAINER: "true"
+
+    # ========================================================================
+    # RESOURCE LIMITS (Recommended for production)
+    # ========================================================================
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # ========================================================================
+    # HEALTH CHECK (Optional)
+    # ========================================================================
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r => r.ok ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # ========================================================================
+    # NETWORK & SECURITY
+    # ========================================================================
+    # Uncomment to expose ports (not needed for STDIO transport)
+    # ports:
+    #   - "3000:3000"
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Read-only root filesystem (recommended for security)
+    read_only: true
+
+    # Temporary filesystem for runtime data
+    tmpfs:
+      - /tmp
+      - /app/logs
+
+    # ========================================================================
+    # LOGGING
+    # ========================================================================
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # ========================================================================
+    # RESTART POLICY
+    # ========================================================================
+    restart: unless-stopped
+
+##############################################################################
+# QUICK START EXAMPLES
+##############################################################################
+
+# Example 1: Gemini (Cheapest - $0.10/$0.40 per MTok)
+# Uncomment these environment variables:
+# CODE_EXECUTOR_SAMPLING_ENABLED: "true"
+# CODE_EXECUTOR_AI_PROVIDER: "gemini"
+# GEMINI_API_KEY: "your-key-here"
+
+# Example 2: OpenAI (Budget-friendly - $0.15/$0.60 per MTok)
+# CODE_EXECUTOR_SAMPLING_ENABLED: "true"
+# CODE_EXECUTOR_AI_PROVIDER: "openai"
+# OPENAI_API_KEY: "sk-xxxxx"
+
+# Example 3: Anthropic (Premium - $1/$5 per MTok)
+# CODE_EXECUTOR_SAMPLING_ENABLED: "true"
+# CODE_EXECUTOR_AI_PROVIDER: "anthropic"
+# ANTHROPIC_API_KEY: "sk-ant-xxxxx"
+
+##############################################################################
+# USAGE
+##############################################################################
+
+# 1. Copy this file: cp docker-compose.example.yml docker-compose.yml
+# 2. Edit docker-compose.yml and add your API keys
+# 3. Start: docker-compose up -d
+# 4. View logs: docker-compose logs -f
+# 5. Stop: docker-compose down
+
+##############################################################################
+# COST COMPARISON (January 2025)
+##############################################################################
+# Provider    | Model                          | Input/MTok | Output/MTok | Total
+# ------------|--------------------------------|------------|-------------|-------
+# Gemini      | gemini-2.5-flash-lite         | $0.10      | $0.40       | $0.50 ⭐
+# Grok        | grok-4-1-fast-non-reasoning   | $0.20      | $0.50       | $0.70
+# OpenAI      | gpt-4o-mini                   | $0.15      | $0.60       | $0.75
+# Perplexity  | sonar                         | $1.00      | $1.00       | $2.00
+# Anthropic   | claude-haiku-4-5-20251001     | $1.00      | $5.00       | $6.00
+#
+# ⭐ Gemini is the most cost-effective option! Plus FREE tier in AI Studio.
+##############################################################################

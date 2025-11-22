@@ -28,6 +28,7 @@ import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './den
 import { HealthCheckServer } from './health-check.js';
 import { VERSION } from './version.js';
 import type { MCPExecutionResult } from './types.js';
+import { detectMCPConfigLocation, getToolDisplayName } from './cli/config-location-detector.js';
 
 /**
  * Health check response schema (Zod)
@@ -794,8 +795,51 @@ const handleShutdownSignal = async (signal: string) => {
 process.on('SIGINT', () => void handleShutdownSignal('SIGINT'));
 process.on('SIGTERM', () => void handleShutdownSignal('SIGTERM'));
 
-// Start server
-server.start().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// Argument parsing: Handle 'setup' command
+const args = process.argv.slice(2);
+const isSetupCommand = args[0] === 'setup';
+
+if (isSetupCommand) {
+  // Run setup wizard instead of starting server
+  console.error('🚀 Launching setup wizard...\n');
+
+  // Dynamically import and run the CLI wizard
+  import('./cli/index.js')
+    .then(() => {
+      // CLI wizard handles its own exit
+    })
+    .catch((error) => {
+      console.error('❌ Setup wizard failed:', error);
+      process.exit(1);
+    });
+} else {
+  // Normal server startup flow
+  (async () => {
+    try {
+      const location = await detectMCPConfigLocation();
+
+      if (!location.exists) {
+        // No configuration found - show instructions and exit
+        const toolName = getToolDisplayName(location.tool);
+
+        console.error('');
+        console.error('❌ No MCP configuration found');
+        console.error('');
+        console.error('📝 To configure code-executor-mcp, run:');
+        console.error('   code-executor-mcp setup');
+        console.error('');
+        console.error(`Configuration will be created at: ${location.path}`);
+        console.error(`For tool: ${toolName}`);
+        console.error('');
+
+        process.exit(1);
+      }
+
+      // Configuration exists - start server
+      await server.start();
+    } catch (error) {
+      console.error('Fatal error:', error);
+      process.exit(1);
+    }
+  })();
+}
