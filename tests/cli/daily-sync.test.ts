@@ -11,22 +11,36 @@ import * as path from 'path';
 import * as os from 'os';
 import { DailySyncService } from '../../src/cli/daily-sync';
 import type { WrapperManifest, MCPServerSelection } from '../../src/cli/types';
+import type { MCPClientPool } from '../../src/mcp/client-pool';
+import type { SchemaCache } from '../../src/validation/schema-cache';
 
 describe('DailySyncService', () => {
   let tmpDir: string;
   let service: DailySyncService;
   let manifestPath: string;
+  let mockMCPClientPool: MCPClientPool;
+  let mockSchemaCache: SchemaCache;
 
   beforeEach(async () => {
     // Create temporary directory for test artifacts
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'daily-sync-test-'));
     manifestPath = path.join(tmpDir, 'wrapper-manifest.json');
 
-    // Initialize service with test paths
+    // Create mock MCPClientPool (Phase 10 requirement)
+    mockMCPClientPool = {
+      listAllToolSchemas: vi.fn().mockResolvedValue([]),
+    } as any;
+
+    // Create mock SchemaCache (Phase 10 requirement)
+    mockSchemaCache = {} as any;
+
+    // Initialize service with test paths and mocked dependencies
     service = new DailySyncService({
       manifestPath,
       wrapperOutputDir: path.join(tmpDir, 'wrappers'),
       templateDir: path.join(__dirname, '..', '..', 'templates'),
+      mcpClientPool: mockMCPClientPool,
+      schemaCache: mockSchemaCache,
     });
   });
 
@@ -49,6 +63,8 @@ describe('DailySyncService', () => {
         manifestPath: 'relative/path',
         wrapperOutputDir: tmpDir,
         templateDir: path.join(__dirname, '..', '..', 'templates'),
+        mcpClientPool: mockMCPClientPool,
+        schemaCache: mockSchemaCache,
       })).toThrow('manifestPath must be absolute');
     });
 
@@ -57,6 +73,8 @@ describe('DailySyncService', () => {
         manifestPath,
         wrapperOutputDir: 'relative/path',
         templateDir: path.join(__dirname, '..', '..', 'templates'),
+        mcpClientPool: mockMCPClientPool,
+        schemaCache: mockSchemaCache,
       })).toThrow('wrapperOutputDir must be absolute');
     });
   });

@@ -6,10 +6,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MCPClientPool } from '../src/mcp-client-pool.js';
+import { MCPClientPool } from '../src/mcp/client-pool.js';
 import { SchemaCache } from '../src/validation/schema-cache.js';
 import type { ToolSchema } from '../src/types/discovery.js';
-import type { CachedToolSchema } from '../src/validation/schema-cache.js';
+import type { CachedToolSchema } from '../src/types.js';
 
 describe('MCP Client Pool listAllToolSchemas() with SchemaCache', () => {
   let clientPool: MCPClientPool;
@@ -30,7 +30,7 @@ describe('MCP Client Pool listAllToolSchemas() with SchemaCache', () => {
 
     // Mock SchemaCache.getToolSchema method
     mockGetToolSchema = vi.fn();
-    schemaCache.getToolSchema = mockGetToolSchema;
+    schemaCache.getToolSchema = mockGetToolSchema as any;
   });
 
   afterEach(() => {
