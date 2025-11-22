@@ -14,6 +14,9 @@ import { MCPDiscoveryService } from './mcp-discovery.js';
 import type { MCPServerConfig } from './types.js';
 import path from 'path';
 import os from 'os';
+import { detectMCPConfigLocation, writeMCPConfig, readOrCreateMCPConfig } from './config-location-detector.js';
+import { generateCompleteConfig } from './templates/mcp-config-template.js';
+import prompts from 'prompts';
 
 /**
  * Main CLI entry point
@@ -75,9 +78,86 @@ async function main(): Promise<void> {
 
       // Step 7: Configure MCP server
       console.log('\n⚙️  Configure MCP Server\n');
-      await wizard.askConfigQuestions();
+      const serverConfig = await wizard.askConfigQuestions();
 
-      console.log(wizard.formatMessage('success', 'Configuration complete'));
+      // Step 7.1: Write complete MCP configuration
+      console.log('\n📝 MCP Configuration\n');
+
+      // Detect where to write the config
+      const configLocation = await detectMCPConfigLocation();
+      console.log(`📍 Config location: ${configLocation.path}`);
+
+      // Ask if user wants to configure AI sampling
+      const samplingResponse = await prompts({
+        type: 'confirm',
+        name: 'enableSampling',
+        message: 'Enable AI sampling (multi-provider LLM support)?',
+        initial: false
+      });
+
+      let samplingConfig = null;
+
+      if (samplingResponse.enableSampling) {
+        // Ask for provider
+        const providerResponse = await prompts({
+          type: 'select',
+          name: 'provider',
+          message: 'Select AI provider',
+          choices: [
+            { title: 'Gemini (cheapest: $0.10/$0.40 per MTok)', value: 'gemini' },
+            { title: 'OpenAI ($0.15/$0.60 per MTok)', value: 'openai' },
+            { title: 'Anthropic ($1/$5 per MTok)', value: 'anthropic' },
+            { title: 'Grok ($0.20/$0.50 per MTok)', value: 'grok' },
+            { title: 'Perplexity ($1/$1 per MTok)', value: 'perplexity' }
+          ],
+          initial: 0
+        });
+
+        // Ask for API key
+        const apiKeyResponse = await prompts({
+          type: 'password',
+          name: 'apiKey',
+          message: `Enter ${providerResponse.provider.toUpperCase()} API key`
+        });
+
+        if (apiKeyResponse.apiKey) {
+          samplingConfig = {
+            enabled: true,
+            provider: providerResponse.provider as 'anthropic' | 'openai' | 'gemini' | 'grok' | 'perplexity',
+            apiKey: apiKeyResponse.apiKey,
+            maxRounds: 10,
+            maxTokens: 10000
+          };
+        }
+      }
+
+      // Generate complete MCP configuration
+      const mcpConfig = generateCompleteConfig({
+        sampling: samplingConfig || { enabled: false },
+        security: {
+          auditLogEnabled: true,
+          contentFiltering: true,
+          allowedProjects: []
+        },
+        performance: {
+          executionTimeout: serverConfig.executionTimeout || 120000,
+          schemaCacheTTL: serverConfig.schemaCacheTTL || 86400000,
+          rateLimitRPM: serverConfig.rateLimit || 60
+        }
+      });
+
+      // Read existing config and merge
+      const existingConfig = await readOrCreateMCPConfig(configLocation.path);
+      existingConfig.mcpServers = {
+        ...existingConfig.mcpServers,
+        ...mcpConfig.mcpServers
+      };
+
+      // Write complete config
+      await writeMCPConfig(configLocation.path, existingConfig, { createBackup: true });
+
+      console.log(wizard.formatMessage('success', 'MCP configuration written successfully'));
+      console.log(wizard.formatMessage('info', `Location: ${configLocation.path}`));
 
       // Step 8: Discover MCP servers from AI tools
       console.log('\n🔎 Discovering MCP servers...\n');

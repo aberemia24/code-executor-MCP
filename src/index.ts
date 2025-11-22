@@ -13,21 +13,22 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { initConfig, isPythonEnabled, isRateLimitEnabled, getRateLimitConfig, shouldSkipDangerousPatternCheck } from './config.js';
-import { ExecuteTypescriptInputSchema, ExecutePythonInputSchema, ExecutionResultSchema } from './schemas.js';
-import { MCPClientPool } from './mcp-client-pool.js';
-import { SecurityValidator } from './security.js';
-import { ConnectionPool } from './connection-pool.js';
-import { RateLimiter } from './rate-limiter.js';
-import { executeTypescriptInSandbox } from './sandbox-executor.js';
-import { executePythonInSandbox as executePythonNative } from './python-executor.js';
-import { executePythonInSandbox as executePythonPyodide } from './pyodide-executor.js';
-import { formatErrorResponse, formatExecutionResultForCli } from './utils.js';
+import { initConfig, isPythonEnabled, isRateLimitEnabled, getRateLimitConfig, shouldSkipDangerousPatternCheck } from './config/loader.js';
+import { ExecuteTypescriptInputSchema, ExecutePythonInputSchema, ExecutionResultSchema } from './config/schemas.js';
+import { MCPClientPool } from './mcp/client-pool.js';
+import { SecurityValidator } from './validation/security-validator.js';
+import { ConnectionPool } from './mcp/connection-pool.js';
+import { RateLimiter } from './security/rate-limiter.js';
+import { executeTypescriptInSandbox } from './executors/sandbox-executor.js';
+import { executePythonInSandbox as executePythonNative } from './executors/python-executor.js';
+import { executePythonInSandbox as executePythonPyodide } from './executors/pyodide-executor.js';
+import { formatErrorResponse, formatExecutionResultForCli } from './utils/utils.js';
 import { ErrorType } from './types.js';
-import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './deno-checker.js';
-import { HealthCheckServer } from './health-check.js';
+import { checkDenoAvailable, getDenoVersion, getDenoInstallMessage } from './executors/deno-checker.js';
+import { HealthCheckServer } from './core/server/health-check.js';
 import { VERSION } from './version.js';
 import type { MCPExecutionResult } from './types.js';
+import { detectMCPConfigLocation, getToolDisplayName } from './cli/config-location-detector.js';
 
 /**
  * Health check response schema (Zod)
@@ -389,16 +390,16 @@ This tool is DISABLED for your protection.`,
                 success: false,
                 output: '',
                 error: '🔴 CRITICAL: Python executor disabled due to security vulnerability.\n\n' +
-                       'ISSUE: No sandbox protection exists in current implementation (issue #50).\n' +
-                       '- Full filesystem access (can read /etc/passwd, SSH keys, etc.)\n' +
-                       '- Full network access (SSRF to localhost services, cloud metadata endpoints)\n' +
-                       '- Pattern-based blocking is easily bypassed\n\n' +
-                       'SOLUTION: Pyodide WebAssembly sandbox implementation in progress (issue #59).\n' +
-                       '- Same security model as Deno executor\n' +
-                       '- Virtual filesystem isolation\n' +
-                       '- Network restricted to authenticated MCP proxy\n\n' +
-                       'This tool will remain disabled until the security fix is complete.\n' +
-                       'For updates: https://github.com/aberemia24/code-executor-MCP/issues/50',
+                  'ISSUE: No sandbox protection exists in current implementation (issue #50).\n' +
+                  '- Full filesystem access (can read /etc/passwd, SSH keys, etc.)\n' +
+                  '- Full network access (SSRF to localhost services, cloud metadata endpoints)\n' +
+                  '- Pattern-based blocking is easily bypassed\n\n' +
+                  'SOLUTION: Pyodide WebAssembly sandbox implementation in progress (issue #59).\n' +
+                  '- Same security model as Deno executor\n' +
+                  '- Virtual filesystem isolation\n' +
+                  '- Network restricted to authenticated MCP proxy\n\n' +
+                  'This tool will remain disabled until the security fix is complete.\n' +
+                  'For updates: https://github.com/aberemia24/code-executor-MCP/issues/50',
                 executionTimeMs: 0,
               }, null, 2),
             }],
@@ -799,8 +800,8 @@ Returns:
 }
 
 // Export functions for testing
-export { executeTypescriptInSandbox as executeTypescript } from './sandbox-executor.js';
-export { executePythonInSandbox as executePython } from './pyodide-executor.js';
+export { executeTypescriptInSandbox as executeTypescript } from './executors/sandbox-executor.js';
+export { executePythonInSandbox as executePython } from './executors/pyodide-executor.js';
 
 // Start server
 const server = new CodeExecutorServer();
@@ -820,8 +821,51 @@ const handleShutdownSignal = async (signal: string) => {
 process.on('SIGINT', () => void handleShutdownSignal('SIGINT'));
 process.on('SIGTERM', () => void handleShutdownSignal('SIGTERM'));
 
-// Start server
-server.start().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// Argument parsing: Handle 'setup' command
+const args = process.argv.slice(2);
+const isSetupCommand = args[0] === 'setup';
+
+if (isSetupCommand) {
+  // Run setup wizard instead of starting server
+  console.error('🚀 Launching setup wizard...\n');
+
+  // Dynamically import and run the CLI wizard
+  import('./cli/index.js')
+    .then(() => {
+      // CLI wizard handles its own exit
+    })
+    .catch((error) => {
+      console.error('❌ Setup wizard failed:', error);
+      process.exit(1);
+    });
+} else {
+  // Normal server startup flow
+  (async () => {
+    try {
+      const location = await detectMCPConfigLocation();
+
+      if (!location.exists) {
+        // No configuration found - show instructions and exit
+        const toolName = getToolDisplayName(location.tool);
+
+        console.error('');
+        console.error('❌ No MCP configuration found');
+        console.error('');
+        console.error('📝 To configure code-executor-mcp, run:');
+        console.error('   code-executor-mcp setup');
+        console.error('');
+        console.error(`Configuration will be created at: ${location.path}`);
+        console.error(`For tool: ${toolName}`);
+        console.error('');
+
+        process.exit(1);
+      }
+
+      // Configuration exists - start server
+      await server.start();
+    } catch (error) {
+      console.error('Fatal error:', error);
+      process.exit(1);
+    }
+  })();
+}

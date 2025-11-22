@@ -52,7 +52,7 @@ RUN apk add --no-cache \
     tini
 
 # Create necessary directories
-RUN mkdir -p /app /tmp/code-executor && \
+RUN mkdir -p /app /app/config /tmp/code-executor && \
     chown -R codeexec:codeexec /app /tmp/code-executor && \
     chmod 1777 /tmp/code-executor
 
@@ -69,6 +69,10 @@ COPY --from=builder --chown=codeexec:codeexec /app/dist ./dist
 
 # Copy configuration files
 COPY --chown=codeexec:codeexec ./.mcp.example.json ./.mcp.json
+
+# Copy Docker entrypoint script for first-run configuration
+COPY --chown=codeexec:codeexec ./docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Security: Switch to non-root user
 USER codeexec
@@ -91,8 +95,9 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Use tini as init system (proper signal handling, zombie reaping)
 ENTRYPOINT ["/sbin/tini", "--"]
 
-# Start MCP server (create /tmp/code-executor first as it may be overlayed by tmpfs)
-CMD ["sh", "-c", "mkdir -p /tmp/code-executor && exec node dist/index.js"]
+# Start MCP server via entrypoint script (handles first-run config generation)
+# The entrypoint script will exec node dist/index.js after config setup
+CMD ["/usr/local/bin/docker-entrypoint.sh", "node", "dist/index.js"]
 
 # Metadata
 LABEL maintainer="code-executor-mcp" \

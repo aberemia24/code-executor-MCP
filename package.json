@@ -22,7 +22,9 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build",
-    "setup": "node dist/cli/index.js"
+    "setup": "node dist/cli/index.js",
+    "docker:build": "docker build -t code-executor-mcp .",
+    "docker:run": "docker run -v $(pwd)/config:/app/config code-executor-mcp"
   },
   "files": [
     "dist",
@@ -53,6 +55,7 @@
   "homepage": "https://github.com/aberemia24/code-executor-MCP#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.22.0",
     "ajv": "^8.17.1",
     "async-lock": "^1.4.1",
@@ -62,6 +65,7 @@
     "handlebars": "^4.7.8",
     "kleur": "^4.1.5",
     "lru-cache": "^11.0.2",
+    "openai": "^6.9.1",
     "opossum": "^8.5.0",
     "ora": "^8.0.1",
     "prom-client": "^15.1.3",

@@ -91,14 +91,33 @@ code-executor-mcp setup
 **What the wizard does:**
 1. 🔍 Scans for existing MCP configs (Claude Code `~/.claude.json`, Cursor `~/.cursor/mcp.json`, project `.mcp.json`)
 2. ⚙️ Configures with smart defaults (or customize interactively)
-3. 📦 Generates type-safe TypeScript/Python wrappers for autocomplete
-4. 📅 Optional: Sets up daily sync to keep wrappers updated
+3. 🤖 **NEW**: Writes complete MCP configuration (sampling + security + sandbox + performance)
+4. 📦 Generates type-safe TypeScript/Python wrappers for autocomplete
+5. 📅 Optional: Sets up daily sync to keep wrappers updated
+
+**Complete Configuration** (all written automatically):
+- **AI Sampling**: Multi-provider support (Anthropic, OpenAI, Gemini, Grok, Perplexity)
+- **Security**: Audit logging, content filtering, project restrictions
+- **Sandbox**: Deno/Python execution with timeouts
+- **Performance**: Rate limiting, schema caching, execution timeouts
 
 **Smart defaults** (just press Enter):
-- Port: 3333 | Timeout: 30s | Rate limit: 30/min
+- Port: 3333 | Timeout: 120s | Rate limit: 60/min
 - Audit logs: `~/.code-executor/audit-logs/`
+- Sampling: Disabled (enable optionally with API key)
 
 **Supported AI Tools:** Claude Code and Cursor (more coming soon)
+
+**First-Run Detection:**
+If you try to run `code-executor-mcp` without configuration:
+```bash
+❌ No MCP configuration found
+
+📝 To configure code-executor-mcp, run:
+   code-executor-mcp setup
+
+Configuration will be created at: ~/.claude.json
+```
 
 #### What are Wrappers?
 
@@ -590,12 +609,37 @@ code-executor-mcp
 
 ### Docker (Production)
 
+**Quick Start:**
 ```bash
 docker pull aberemia24/code-executor-mcp:latest
 docker run -p 3333:3333 aberemia24/code-executor-mcp:latest
 ```
 
-See [DOCKER_TESTING.md](DOCKER_TESTING.md) for security details.
+**With docker-compose (Recommended):**
+```bash
+# 1. Copy example configuration
+cp docker-compose.example.yml docker-compose.yml
+
+# 2. Edit docker-compose.yml to add your API keys (optional)
+#    - Set CODE_EXECUTOR_SAMPLING_ENABLED="true"
+#    - Set your provider: CODE_EXECUTOR_AI_PROVIDER="gemini"
+#    - Add API key: GEMINI_API_KEY="your-key-here"
+
+# 3. Start the service
+docker-compose up -d
+
+# 4. View logs
+docker-compose logs -f
+```
+
+**First-Run Auto-Configuration:**
+Docker deployment automatically generates complete MCP configuration from environment variables on first run:
+- ✅ All environment variables → comprehensive config
+- ✅ Includes sampling, security, sandbox, and performance settings
+- ✅ Config saved to `/app/config/.mcp.json`
+- ✅ Persistent across container restarts (use volume mount)
+
+See [DOCKER_TESTING.md](DOCKER_TESTING.md) for security details and [docker-compose.example.yml](docker-compose.example.yml) for all available configuration options.
 
 ### Local Development
 
@@ -650,6 +694,40 @@ npm run server
 | `PYTHON_ENABLED` | No | Enable Python executor | `true` (default) |
 
 **Security Note:** Store API keys in environment variables, not directly in config files.
+
+### Multi-Provider AI Sampling Configuration
+
+**NEW:** Support for 5 AI providers (Anthropic, OpenAI, Gemini, Grok, Perplexity) with automatic provider-specific model selection.
+
+**Quick Setup:**
+```bash
+# 1. Copy example config
+cp .env.example .env
+
+# 2. Edit .env and add your API key
+CODE_EXECUTOR_SAMPLING_ENABLED=true
+CODE_EXECUTOR_AI_PROVIDER=gemini  # cheapest option!
+GEMINI_API_KEY=your-key-here
+
+# 3. Start server
+npm start
+```
+
+**Provider Comparison (January 2025):**
+| Provider | Default Model | Cost (Input/Output per MTok) | Best For |
+|----------|---------------|------------------------------|----------|
+| **Gemini** ⭐ | `gemini-2.5-flash-lite` | $0.10 / $0.40 | **Cheapest** + FREE tier |
+| Grok | `grok-4-1-fast-non-reasoning` | $0.20 / $0.50 | 2M context, fast |
+| OpenAI | `gpt-4o-mini` | $0.15 / $0.60 | Popular, reliable |
+| Perplexity | `sonar` | $1.00 / $1.00 | Real-time search |
+| Anthropic | `claude-haiku-4-5-20251001` | $1.00 / $5.00 | Premium quality |
+
+**Configuration Options:** See `.env.example` for full list of sampling configuration options including:
+- API keys for all providers
+- Model allowlists
+- Rate limiting & quotas
+- Content filtering
+- System prompt controls
 
 **Auto-discovery (NEW in v0.7.3):** Code-executor automatically discovers and merges:
 - `~/.claude.json` (global/personal MCPs)
