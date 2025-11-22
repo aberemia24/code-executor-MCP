@@ -518,7 +518,7 @@ export class CLIWizard {
       return response.tools.map(tool => ({
         name: `mcp__${server.name}__${tool.name}`,
         description: tool.description || '',
-        parameters: tool.inputSchema as {
+        inputSchema: tool.inputSchema as {
           type: 'object';
           properties: Record<string, any>;
           required?: string[];

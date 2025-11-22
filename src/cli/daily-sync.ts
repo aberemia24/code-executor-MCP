@@ -372,7 +372,7 @@ export class DailySyncService {
     return {
       name: discoveryTool.name,
       description: discoveryTool.description,
-      parameters: cliParameters,
+      inputSchema: cliParameters,
     };
   }
 

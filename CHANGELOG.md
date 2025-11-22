@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2025-11-22
+
+### 🚨 CRITICAL BUGFIX #3
+
+**v1.0.1, v1.0.2, AND v1.0.3 ALL BROKEN - Wrapper generation type mismatch**
+
+#### Fixed
+
+- **Wrapper Generator Type Mismatch** - Fixed type mismatch between templates and data structure
+  - **Error:** Templates expect `inputSchema` but wizard provides `parameters`
+  - **Root Cause:** v1.0.2 "fix" changed templates to use `this.inputSchema`, but wizard still provided `parameters`
+  - **Impact:** ALL previous versions have 100% wrapper generation failure (different causes)
+    - v1.0.1: Template bug (parameters → inputSchema)
+    - v1.0.2: Missing templates in npm
+    - v1.0.3: Type mismatch (parameters vs inputSchema)
+  - **Fix:** Updated wizard and types to use `inputSchema` consistently
+  - **Files Changed:**
+    - `src/cli/wizard.ts:521` - Changed `parameters: tool.inputSchema` → `inputSchema: tool.inputSchema`
+    - `src/cli/types.ts:243` - Changed `parameters:` → `inputSchema:` in ToolSchema interface
+    - `src/cli/daily-sync.ts:375` - Changed `parameters:` → `inputSchema:` in conversion function
+    - `tests/cli/wrapper-generator.test.ts` - Updated all test mocks to use `inputSchema`
+  - **Tested:** All wrapper generator tests pass (21/21), daily sync tests pass (11/11)
+
+**⚠️ Critical:** v1.0.1, v1.0.2, and v1.0.3 are all broken. Upgrade to v1.0.4 immediately.
+
 ## [1.0.3] - 2025-11-22
 
 ### 🚨 CRITICAL BUGFIX #2

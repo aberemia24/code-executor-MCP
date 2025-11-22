@@ -236,11 +236,11 @@ export interface ToolSchema {
   description: string;
 
   /**
-   * JSON Schema for tool parameters
+   * JSON Schema for tool input parameters
    *
    * **FORMAT:** JSON Schema Draft 7
    */
-  parameters: {
+  inputSchema: {
     type: 'object';
     properties: Record<string, any>;
     required?: string[];

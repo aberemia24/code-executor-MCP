@@ -48,7 +48,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'safe_tool',
             description: 'Safe tool',
-            parameters: {
+            inputSchema: {
               type: 'object',
               properties: {},
             },
@@ -74,7 +74,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'test_tool',
             description: 'Safe description',
-            parameters: {
+            inputSchema: {
               type: 'object',
               properties: {},
             },
@@ -154,7 +154,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'mcp__filesystem__read_file',
             description: 'Read file contents',
-            parameters: {
+            inputSchema: {
               type: 'object',
               properties: {
                 path: {
@@ -168,7 +168,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'mcp__filesystem__write_file',
             description: 'Write file contents',
-            parameters: {
+            inputSchema: {
               type: 'object',
               properties: {
                 path: { type: 'string', description: 'File path to write' },
@@ -211,7 +211,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'test_tool',
             description: 'Test',
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -234,7 +234,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'test_tool',
             description: 'Test',
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -260,7 +260,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'mcp__filesystem__read_file',
             description: 'Read file contents',
-            parameters: {
+            inputSchema: {
               type: 'object',
               properties: {
                 path: { type: 'string', description: 'File path' },
@@ -314,7 +314,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'complex_tool',
             description: 'Complex tool',
-            parameters: {
+            inputSchema: {
               type: 'object',
               properties: {
                 config: {
@@ -346,7 +346,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'test_tool',
             description: 'Test',
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -368,7 +368,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'test_tool',
             description: 'Test 1',
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -379,7 +379,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'test_tool',
             description: 'Test 2', // Different description
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -403,7 +403,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'mcp__test__some_long_name',
             description: 'Test',
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -441,7 +441,7 @@ describe('WrapperGenerator', () => {
           {
             name: 'testLongName',
             description: 'Test',
-            parameters: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
           },
         ],
       };
@@ -503,7 +503,7 @@ describe('WrapperGenerator', () => {
         status: 'online',
         toolCount: 1,
         sourceConfig: '/test/config.json',
-        tools: [{ name: 'test_tool', description: 'Test tool', parameters: { type: 'object', properties: {} } }],
+        tools: [{ name: 'test_tool', description: 'Test tool', inputSchema: { type: 'object', properties: {} } }],
       };
 
       // Act
@@ -545,7 +545,7 @@ describe('WrapperGenerator', () => {
         status: 'online',
         toolCount: 1,
         sourceConfig: '/test/config.json',
-        tools: [{ name: 'test_tool', description: 'Test tool v1', parameters: { type: 'object', properties: {} } }],
+        tools: [{ name: 'test_tool', description: 'Test tool v1', inputSchema: { type: 'object', properties: {} } }],
       };
 
       await generator.generateWrapper(mcp, 'typescript', 'esm');
@@ -553,7 +553,7 @@ describe('WrapperGenerator', () => {
       // Act: Regenerate with updated schema
       const mcpUpdated: MCPServerSelection = {
         ...mcp,
-        tools: [{ name: 'test_tool_v2', description: 'Test tool v2 (updated)', parameters: { type: 'object', properties: { newParam: { type: 'string' } } } }],
+        tools: [{ name: 'test_tool_v2', description: 'Test tool v2 (updated)', inputSchema: { type: 'object', properties: { newParam: { type: 'string' } } } }],
       };
 
       const result2 = await generator.generateWrapper(mcpUpdated, 'typescript', 'esm');
@@ -579,7 +579,7 @@ describe('WrapperGenerator', () => {
         status: 'online',
         toolCount: 1,
         sourceConfig: '/test/config.json',
-        tools: [{ name: 'tool1', description: 'Tool 1', parameters: { type: 'object', properties: {} } }],
+        tools: [{ name: 'tool1', description: 'Tool 1', inputSchema: { type: 'object', properties: {} } }],
       };
 
       const mcp2: MCPServerSelection = {
@@ -589,7 +589,7 @@ describe('WrapperGenerator', () => {
         status: 'online',
         toolCount: 1,
         sourceConfig: '/test/config.json',
-        tools: [{ name: 'tool2', description: 'Tool 2', parameters: { type: 'object', properties: {} } }],
+        tools: [{ name: 'tool2', description: 'Tool 2', inputSchema: { type: 'object', properties: {} } }],
       };
 
       // Act
