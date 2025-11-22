@@ -81,12 +81,12 @@ export interface RedisCacheProviderOptions {
  * - Eventual consistency across instances
  */
 export class RedisCacheProvider<K extends string, V extends object>
-  implements ICacheProvider<K, V>
-{
+  implements ICacheProvider<K, V> {
   private redisClient: RedisClientType | null = null;
   private lruCache: LRUCacheProvider<K, V>;
   private isRedisConnected = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private timers: Set<NodeJS.Timeout> = new Set();
   private readonly options: Required<RedisCacheProviderOptions>;
 
   constructor(options: RedisCacheProviderOptions) {
@@ -139,7 +139,11 @@ export class RedisCacheProvider<K extends string, V extends object>
     // Attempt connection (async with timeout)
     const connectionPromise = this.redisClient.connect();
     const timeoutPromise = new Promise<void>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), 1500);
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        reject(new Error('Connection timeout'));
+      }, 1500);
+      this.timers.add(timer);
     });
 
     Promise.race([connectionPromise, timeoutPromise])
@@ -331,6 +335,12 @@ export class RedisCacheProvider<K extends string, V extends object>
       clearInterval(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+
+    // Clear all active timers
+    for (const timer of this.timers) {
+      clearTimeout(timer);
+    }
+    this.timers.clear();
 
     // Close Redis connection
     if (this.redisClient) {

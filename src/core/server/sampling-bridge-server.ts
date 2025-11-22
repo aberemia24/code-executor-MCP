@@ -610,9 +610,9 @@ export class SamplingBridgeServer {
       const model = body.model || defaultModels[this.config.provider] || 'claude-haiku-4-5-20251001';
 
       // Validate model is in allowlist
-      // TODO (#69): Make allowedModels configurable per provider or generic
-      // For now, we skip strict model validation if provider is not Anthropic to allow flexibility
-      if (this.config.provider === 'anthropic' && !this.config.allowedModels.includes(model)) {
+      // Validate model is in allowlist (Issue #69: Enforce for all providers)
+      // Config loader now ensures allowedModels matches the configured provider
+      if (!this.config.allowedModels.includes(model)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           error: `Model '${model}' not in allowlist. Allowed models: ${this.config.allowedModels.join(', ')}`

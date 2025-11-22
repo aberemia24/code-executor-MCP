@@ -80,7 +80,7 @@ export class HealthCheckServer {
     this.mcpClientPool = options.mcpClientPool;
     this.connectionPool = options.connectionPool;
     this.port = options.port ?? parseInt(process.env.HEALTH_CHECK_PORT ?? '3000', 10);
-    this.host = options.host ?? process.env.HEALTH_CHECK_HOST ?? '0.0.0.0';
+    this.host = options.host ?? process.env.HEALTH_CHECK_HOST ?? '127.0.0.1';
     this.version = options.version ?? VERSION;
   }
 

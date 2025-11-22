@@ -51,7 +51,7 @@ export function formatErrorResponse(
 export function isValidMCPToolName(toolName: string): boolean {
   // Format: mcp__<server>__<tool>
   // Allow uppercase (Linear, Notion), hyphens (Context7 tools), and underscores
-  const pattern = /^mcp__[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+$/;
+  const pattern = /^mcp__((?:(?!__)[a-zA-Z0-9_-])+)__((?:(?!__)[a-zA-Z0-9_-])+)$/;
   return pattern.test(toolName);
 }
 
@@ -188,7 +188,7 @@ export async function isAllowedPath(path: string, allowedRoots: string[]): Promi
 
         // Exact match or proper subdirectory
         if (resolvedPath === resolvedRoot ||
-            resolvedPath.startsWith(resolvedRoot + sep)) {
+          resolvedPath.startsWith(resolvedRoot + sep)) {
           return true;
         }
       } catch {

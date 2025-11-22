@@ -514,13 +514,18 @@ export class MCPClientPool implements IToolSchemaProvider {
       };
 
       // Wait for slot notification event
-      this.queueSlotEmitter.once(`slot-${requestId}`, handler);
+      try {
+        this.queueSlotEmitter.once(`slot-${requestId}`, handler);
+      } catch (error) {
+        this.queueSlotEmitter.removeAllListeners(`slot-${requestId}`);
+        reject(error);
+      }
 
       // Set timeout to prevent indefinite waiting (matches queue timeout)
       // Registered after listener to ensure we don't miss the event
       const timeout = setTimeout(() => {
-        // Remove event listener to prevent memory leak
-        this.queueSlotEmitter.off(`slot-${requestId}`, handler);
+        // Remove all listeners for this specific request ID to be safe
+        this.queueSlotEmitter.removeAllListeners(`slot-${requestId}`);
         reject(new Error(`Queue timeout: Request ${requestId} not processed within ${this.queueTimeoutMs}ms`));
       }, this.queueTimeoutMs);
     });
