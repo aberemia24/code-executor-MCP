@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2025-11-22
+
+### 🚨 CRITICAL BUGFIX #2
+
+**v1.0.1 AND v1.0.2 BOTH BROKEN - Templates not published to npm**
+
+#### Fixed
+
+- **Missing Templates in npm Package** - Added `templates/` directory to package.json files array
+  - Root Cause: `package.json` files array excluded `templates/` directory
+  - Impact: v1.0.1 and v1.0.2 users have NO templates → 100% wrapper generation failure
+  - Fix: Added `"templates"` to files array in package.json
+  - All wrapper generation now works correctly
+
+**⚠️ Critical:** v1.0.1 and v1.0.2 are completely broken. Upgrade to v1.0.3 immediately.
+
 ## [1.0.2] - 2025-11-22
 
 ### 🚨 CRITICAL BUGFIX
