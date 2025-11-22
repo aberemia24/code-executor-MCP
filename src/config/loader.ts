@@ -161,6 +161,13 @@ export function getAllowedNetworkHosts(): string[] | true {
 }
 
 /**
+ * Get allowed tools
+ */
+export function getAllowedTools(): string[] {
+  return getConfig().security?.allowedTools ?? [];
+}
+
+/**
  * Check if audit logging is enabled
  */
 export function isAuditLogEnabled(): boolean {
@@ -312,8 +319,19 @@ export function getSamplingConfig(): SamplingConfig {
   const allowedPrompts = process.env.CODE_EXECUTOR_ALLOWED_SYSTEM_PROMPTS
     ? process.env.CODE_EXECUTOR_ALLOWED_SYSTEM_PROMPTS.split(',').map(s => s.trim())
     : undefined;
-  const allowedModels = process.env.CODE_EXECUTOR_ALLOWED_MODELS
-    ? process.env.CODE_EXECUTOR_ALLOWED_MODELS.split(',').map(s => s.trim())
+  const provider = process.env.CODE_EXECUTOR_AI_PROVIDER || 'anthropic';
+
+  // Issue #69: Support provider-specific model allowlists
+  // Priority: 
+  // 1. CODE_EXECUTOR_ALLOWED_MODELS_<PROVIDER> (e.g., _OPENAI)
+  // 2. CODE_EXECUTOR_ALLOWED_MODELS (global override)
+  // 3. Default list in schema
+  const providerEnvKey = `CODE_EXECUTOR_ALLOWED_MODELS_${provider.toUpperCase()}`;
+  const providerModels = process.env[providerEnvKey];
+
+  const allowedModelsRaw = providerModels || process.env.CODE_EXECUTOR_ALLOWED_MODELS;
+  const allowedModels = allowedModelsRaw
+    ? allowedModelsRaw.split(',').map(s => s.trim())
     : undefined;
 
   try {

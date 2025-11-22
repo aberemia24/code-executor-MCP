@@ -9,8 +9,8 @@ import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
-import { getDenoPath, getSamplingConfig } from '../config/loader.js';
-import { sanitizeOutput, truncateOutput, formatDuration, normalizeError } from '../utils/utils.js';
+import { getDenoPath, getSamplingConfig, getAllowedTools, getAllowedWritePaths, getAllowedNetworkHosts } from '../config/loader.js';
+import { sanitizeOutput, truncateOutput, formatDuration, normalizeError, hashCode, isAllowedPath } from '../utils/utils.js';
 import { MCPProxyServer } from '../core/server/mcp-proxy-server.js';
 import { StreamingProxy } from '../core/middleware/streaming-proxy.js';
 import { SamplingBridgeServer } from '../core/server/sampling-bridge-server.js';
@@ -44,6 +44,21 @@ export async function executeTypescriptInSandbox(
     } catch (error) {
       console.error('Failed to start streaming proxy:', error);
       // Continue without streaming (non-critical failure)
+    }
+  }
+
+  // Security: Validate requested tools against server allowlist (Issue #51)
+  const serverAllowedTools = getAllowedTools();
+  if (serverAllowedTools.length > 0) {
+    const requestedTools = options.allowedTools || [];
+    const deniedTools = requestedTools.filter(t => !serverAllowedTools.includes(t));
+    if (deniedTools.length > 0) {
+      return {
+        success: false,
+        output: '',
+        error: `Tools not allowed by server policy: ${deniedTools.join(', ')}`,
+        executionTimeMs: 0,
+      };
     }
   }
 
@@ -135,6 +150,12 @@ export async function executeTypescriptInSandbox(
     // Write user code to temp file atomically (avoids eval() security violation)
     await fs.writeFile(userCodeFile, options.code, 'utf-8');
     tempFileCreated = true;
+
+    // Security: Verify file integrity (Issue #55)
+    const writtenContent = await fs.readFile(userCodeFile, 'utf-8');
+    if (hashCode(options.code) !== hashCode(writtenContent)) {
+      throw new Error('Temp file integrity check failed - possible tampering');
+    }
 
     // SECURITY: Store expected hash for post-execution verification (optional defense-in-depth)
     // No re-read before execution = no TOCTOU race window
@@ -446,7 +467,7 @@ await import('file://${userCodeFile}');
 `;
 
     // Build Deno arguments
-    const denoArgs = ['run'];
+    const denoArgs = ['run', '--no-remote']; // Security: Block remote imports (Issue #53)
 
     // SECURITY: Environment variable access blocked by default (no --allow-env)
     // Deno denies access to environment variables unless explicitly granted
@@ -464,11 +485,40 @@ await import('file://${userCodeFile}');
 
     // Always allow /tmp for temp file storage
     const writePaths = [...new Set([...(options.permissions.write ?? []), '/tmp'])];
+
+    // Security: Validate write paths against server policy (Issue #52)
+    const serverAllowedWrite = getAllowedWritePaths();
+    if (serverAllowedWrite === false) {
+      // Only allow /tmp if write is disabled globally
+      const nonTmpWrites = (options.permissions.write || []).filter(p => p !== '/tmp');
+      if (nonTmpWrites.length > 0) {
+        throw new Error(`Write access denied by server policy: ${nonTmpWrites.join(', ')}`);
+      }
+    } else {
+      // Check if requested paths are allowed
+      for (const path of (options.permissions.write || [])) {
+        if (path === '/tmp') continue; // /tmp always allowed
+        const isAllowed = await isAllowedPath(path, serverAllowedWrite);
+        if (!isAllowed) {
+          throw new Error(`Write path denied by server policy: ${path}`);
+        }
+      }
+    }
+
     for (const writePath of writePaths) {
       denoArgs.push(`--allow-write=${writePath}`);
     }
 
     if (options.permissions.net && options.permissions.net.length > 0) {
+      // Security: Validate network hosts against server policy (Issue #52)
+      const serverAllowedNet = getAllowedNetworkHosts();
+      if (serverAllowedNet !== true) {
+        const deniedHosts = options.permissions.net.filter(host => !serverAllowedNet.includes(host));
+        if (deniedHosts.length > 0) {
+          throw new Error(`Network access denied by server policy: ${deniedHosts.join(', ')}`);
+        }
+      }
+
       // Always allow localhost for MCP proxy
       const netHosts = [...new Set([...options.permissions.net, 'localhost'])];
       // Deno requires comma-separated hosts in single --allow-net flag

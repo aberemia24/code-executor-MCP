@@ -54,6 +54,7 @@ export const SecurityConfigSchema = z.object({
   auditLogPath: z.string().default('./audit.log'),
   rateLimit: RateLimitConfigSchema.optional(),
   skipDangerousPatternCheck: z.boolean().default(false),
+  allowedTools: z.array(z.string()).default([]),
 });
 
 export type SecurityConfig = z.infer<typeof SecurityConfigSchema>;
