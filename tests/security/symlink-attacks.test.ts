@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { isAllowedPath } from '../../src/utils.js';
+import { isAllowedPath } from '../../src/utils/utils.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';

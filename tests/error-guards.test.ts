@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { isError, isErrnoException, normalizeError } from '../src/utils.js';
+import { isError, isErrnoException, normalizeError } from '../src/utils/utils.js';
 
 describe('Error Type Guards (TYPE-001)', () => {
   describe('isError()', () => {

@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AllowlistValidator } from '../../src/proxy-helpers.js';
+import { AllowlistValidator } from '../../src/mcp/proxy-helpers.js';
 
 describe('Allowlist Bypass Attack Protection (P0 Security)', () => {
   describe('Basic Allowlist Enforcement', () => {

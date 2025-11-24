@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SecurityValidator } from '../../src/security.js';
+import { SecurityValidator } from '../../src/validation/security-validator.js';
 
 describe('Dangerous Pattern Validation Bypass Attacks (P0 Security)', () => {
   let validator: SecurityValidator;

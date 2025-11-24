@@ -598,6 +598,7 @@ describe('CLIWizard', () => {
     it('should_promptForEachServer_when_multipleServersSelected', async () => {
       // Mock user selecting TypeScript for filesystem, Python for github
       vi.mocked(prompts)
+        .mockResolvedValueOnce({ value: false }) // batch? no
         .mockResolvedValueOnce({ language: 'typescript' })
         .mockResolvedValueOnce({ language: 'python' });
 
@@ -619,7 +620,9 @@ describe('CLIWizard', () => {
     });
 
     it('should_throwError_when_userCancelsPrompt', async () => {
-      vi.mocked(prompts).mockResolvedValue(null);
+      vi.mocked(prompts)
+        .mockResolvedValueOnce({ value: false })
+        .mockResolvedValueOnce(null);
 
       await expect(wizard.selectLanguagePerMCP(mockSelectedServers)).rejects.toThrow('Language selection cancelled');
     });
@@ -653,6 +656,7 @@ describe('CLIWizard', () => {
 
     it('should_preserveServerOrder_when_returningSelections', async () => {
       vi.mocked(prompts)
+        .mockResolvedValueOnce({ value: false })
         .mockResolvedValueOnce({ language: 'typescript' })
         .mockResolvedValueOnce({ language: 'python' });
 
@@ -704,6 +708,7 @@ describe('CLIWizard', () => {
       ];
 
       vi.mocked(prompts)
+        .mockResolvedValueOnce({ value: false })
         .mockResolvedValueOnce({ language: 'typescript' })
         .mockResolvedValueOnce({ language: 'python' })
         .mockResolvedValueOnce({ language: 'both' });

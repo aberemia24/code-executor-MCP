@@ -8,11 +8,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { DiscoveryRequestHandler } from '../../src/handlers/discovery-request-handler.js';
-import type { MCPClientPool } from '../../src/mcp-client-pool.js';
-import type { SchemaCache } from '../../src/schema-cache.js';
-import type { RateLimiter } from '../../src/rate-limiter.js';
-import { MetricsExporter } from '../../src/metrics-exporter.js';
+import { DiscoveryRequestHandler } from '../../src/core/handlers/discovery-request-handler.js';
+import type { MCPClientPool } from '../../src/mcp/client-pool.js';
+import type { SchemaCache } from '../../src/validation/schema-cache.js';
+import type { RateLimiter } from '../../src/security/rate-limiter.js';
+import { MetricsExporter } from '../../src/observability/metrics-exporter.js';
 import type { ToolSchema } from '../../src/types/discovery.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 
@@ -27,17 +27,17 @@ describe('DiscoveryRequestHandler', () => {
     {
       name: 'mcp__server1__code_review',
       description: 'Review code for quality',
-      parameters: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'mcp__server1__file_read',
       description: 'Read file contents',
-      parameters: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'mcp__server2__data_analysis',
       description: 'Analyze data patterns',
-      parameters: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
     },
   ];
 
@@ -55,7 +55,9 @@ describe('DiscoveryRequestHandler', () => {
     mockRateLimiter = {
       checkLimit: vi.fn().mockResolvedValue({
         allowed: true,
+        remaining: 10,
         resetIn: 60000,
+        fillLevel: 0,
       }),
     } as unknown as RateLimiter;
 
@@ -78,279 +80,237 @@ describe('DiscoveryRequestHandler', () => {
   describe('Happy Path - No Search Query', () => {
     it('should_returnAllTools_when_noSearchProvided', async () => {
       const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(200, {
-        'Content-Type': 'application/json',
-      });
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.tools).toHaveLength(3);
-      expect(body.tools[0].name).toBe('mcp__server1__code_review');
+      vi.useRealTimers();
     });
 
-    it('should_callMCPClientPool_once', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
+    describe('handle()', () => {
+      it('should_returnAllTools_when_noQueryProvided', async () => {
+        const req = createMockRequest('GET', '/mcp/tools');
+        const res = createMockResponse();
 
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
+        await handler.handle(req, res, 'valid-token');
 
-      expect(mockMCPClientPool.listAllToolSchemas).toHaveBeenCalledTimes(1);
-      expect(mockMCPClientPool.listAllToolSchemas).toHaveBeenCalledWith(mockSchemaCache);
+        expect(res.statusCode).toBe(200);
+        expect(JSON.parse(getResponseBody(res))).toEqual({
+          tools: mockTools,
+        });
+        expect(mockMCPClientPool.listAllToolSchemas).toHaveBeenCalled();
+      });
+
+      it('should_filterTools_when_searchQueryProvided', async () => {
+        const req = createMockRequest('GET', '/mcp/tools?q=file');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(res.statusCode).toBe(200);
+        const data = JSON.parse(getResponseBody(res));
+        expect(data.tools.length).toBe(1);
+        expect(data.tools[0].name).toContain('file_read');
+      });
+
+      it('should_handleMultipleSearchTerms_withORLogic', async () => {
+        const req = createMockRequest('GET', '/mcp/tools?q=read&q=code');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(res.statusCode).toBe(200);
+        const data = JSON.parse(getResponseBody(res));
+        expect(data.tools.length).toBe(2); // read_file + code_review
+        expect(data.tools.some((t: ToolSchema) => t.name.includes('read'))).toBe(true);
+        expect(data.tools.some((t: ToolSchema) => t.name.includes('code'))).toBe(true);
+      });
+
+      it('should_returnEmptyList_when_noMatchesFound', async () => {
+        const req = createMockRequest('GET', '/mcp/tools?q=nonexistent');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(res.statusCode).toBe(200);
+        expect(JSON.parse(getResponseBody(res))).toEqual({
+          tools: [],
+        });
+      });
+
+      it('should_return400_when_searchQueryTooLong', async () => {
+        const longQuery = 'a'.repeat(101);
+        const req = createMockRequest('GET', `/mcp/tools?q=${longQuery}`);
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(res.statusCode).toBe(400);
+        expect(JSON.parse(getResponseBody(res)).error).toContain('too long');
+      });
+
+      it('should_return429_when_rateLimitExceeded', async () => {
+        vi.mocked(mockRateLimiter.checkLimit).mockResolvedValue({
+          allowed: false,
+          remaining: 0,
+          resetIn: 5000,
+          fillLevel: 1
+        });
+
+        const req = createMockRequest('GET', '/mcp/tools');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(res.statusCode).toBe(429);
+      });
+
+      it('should_notCallMCPClientPool_when_rateLimited', async () => {
+        vi.mocked(mockRateLimiter.checkLimit).mockResolvedValue({
+          allowed: false,
+          remaining: 0,
+          resetIn: 5000,
+          fillLevel: 1
+        });
+
+        const req = createMockRequest('GET', '/mcp/tools');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(mockMCPClientPool.listAllToolSchemas).not.toHaveBeenCalled();
+      });
+
+      it('should_trackMetrics_when_requestHandled', async () => {
+        const spy = vi.spyOn(metricsExporter, 'recordHttpRequest');
+        const req = createMockRequest('GET', '/mcp/tools');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(spy).toHaveBeenCalledWith('GET', 200);
+      });
+
+      it('should_handleErrors_gracefully', async () => {
+        vi.mocked(mockMCPClientPool.listAllToolSchemas).mockRejectedValue(new Error('Pool error'));
+
+        const req = createMockRequest('GET', '/mcp/tools');
+        const res = createMockResponse();
+
+        await handler.handle(req, res, 'valid-token');
+
+        expect(res.statusCode).toBe(500);
+        expect(JSON.parse(getResponseBody(res))).toHaveProperty('error');
+      });
+
+      it('should_return500_when_discoveryTimesOut', async () => {
+        // Mock listAllToolSchemas to hang longer than timeout (500ms)
+        vi.spyOn(mockMCPClientPool, 'listAllToolSchemas').mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve(mockTools), 1000))
+        );
+
+        const mockRequest = createMockRequest('GET', '/mcp/tools');
+        const mockResponse = createMockResponse();
+
+        const handlePromise = handler.handle(mockRequest, mockResponse, 'valid-token');
+
+        // Advance time to trigger timeout
+        vi.advanceTimersByTime(600);
+
+        await handlePromise;
+
+        expect(mockResponse.statusCode).toBe(500);
+        const body = JSON.parse(getResponseBody(mockResponse));
+        expect(body.error).toContain('timeout');
+      });
+    });
+
+    describe('Audit Logging', () => {
+      it('should_logDiscoveryRequest_when_successful', async () => {
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+
+        const mockRequest = createMockRequest('GET', '/mcp/tools?q=test');
+        const mockResponse = createMockResponse();
+
+        await handler.handle(mockRequest, mockResponse, 'valid-token');
+
+        // Verify audit log emitted
+        expect(consoleSpy).toHaveBeenCalled();
+        const logCalls = consoleSpy.mock.calls.map((call) => call[0]);
+        const discoveryLog = logCalls.find((log) =>
+          typeof log === 'string' && log.includes('discovery')
+        );
+
+        expect(discoveryLog).toBeDefined();
+        if (discoveryLog) {
+          const logData = JSON.parse(discoveryLog);
+          expect(logData.action).toBe('discovery');
+          expect(logData.endpoint).toBe('/mcp/tools');
+          expect(logData.searchTerms).toContain('test');
+          expect(logData.resultsCount).toBeDefined();
+        }
+
+        consoleSpy.mockRestore();
+      });
+    });
+
+    describe('Error Handling', () => {
+      it('should_return500_when_mcpClientPoolThrows', async () => {
+        vi.spyOn(mockMCPClientPool, 'listAllToolSchemas').mockRejectedValue(
+          new Error('MCP server error')
+        );
+
+        const mockRequest = createMockRequest('GET', '/mcp/tools');
+        const mockResponse = createMockResponse();
+
+        await handler.handle(mockRequest, mockResponse, 'valid-token');
+
+        expect(mockResponse.statusCode).toBe(500);
+        const body = JSON.parse(getResponseBody(mockResponse));
+        expect(body.error).toContain('Discovery request failed');
+      });
     });
   });
 
-  describe('Search Filtering', () => {
-    it('should_returnFilteredTools_when_singleKeywordProvided', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=code');
-      const mockResponse = createMockResponse();
+  // ============================================================================
+  // Test Helpers
+  // ============================================================================
 
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
+  interface MockServerResponse extends ServerResponse {
+    _chunks: string[];
+  }
 
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.tools).toHaveLength(1);
-      expect(body.tools[0].name).toBe('mcp__server1__code_review');
-    });
+  function createMockRequest(method: string, url: string): IncomingMessage {
+    return {
+      method,
+      url,
+      headers: { host: 'localhost' },
+    } as IncomingMessage;
+  }
 
-    it('should_returnFilteredTools_when_multipleKeywordsProvided', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=code&q=file');
-      const mockResponse = createMockResponse();
+  function createMockResponse(): MockServerResponse {
+    const chunks: string[] = [];
+    const headers: Record<string, string | number | string[]> = {};
 
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
+    const mock = {
+      statusCode: 200,
+      writeHead: vi.fn((status, h) => {
+        mock.statusCode = status;
+        if (h) Object.assign(headers, h);
+        return mock;
+      }),
+      end: vi.fn((data?: string) => {
+        if (data) chunks.push(data);
+        return mock;
+      }),
+      getHeader: vi.fn((name: string) => headers[name]),
+      setHeader: vi.fn((name: string, value: string) => {
+        headers[name] = value;
+        return mock;
+      }),
+      _chunks: chunks,
+    } as unknown as MockServerResponse;
 
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.tools).toHaveLength(2); // Both code_review and file_read match
-    });
+    return mock;
+  }
 
-    it('should_useCaseInsensitiveMatching_when_searching', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=CODE');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.tools).toHaveLength(1);
-      expect(body.tools[0].name).toBe('mcp__server1__code_review');
-    });
-
-    it('should_matchInDescription_when_searching', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=quality');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.tools).toHaveLength(1);
-      expect(body.tools[0].name).toBe('mcp__server1__code_review');
-    });
-
-    it('should_returnEmpty_when_noToolsMatch', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=nonexistent');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.tools).toHaveLength(0);
-    });
-  });
-
-  describe('Rate Limiting', () => {
-    it('should_return429_when_rateLimitExceeded', async () => {
-      vi.spyOn(mockRateLimiter, 'checkLimit').mockResolvedValue({
-        allowed: false,
-        resetIn: 30000,
-      });
-
-      const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(429, {
-        'Content-Type': 'application/json',
-      });
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.error).toContain('Rate limit exceeded');
-      expect(body.retryAfter).toBe(30);
-      expect(body.limit).toBe(30);
-      expect(body.window).toBe('60s');
-    });
-
-    it('should_notCallMCPClientPool_when_rateLimited', async () => {
-      vi.spyOn(mockRateLimiter, 'checkLimit').mockResolvedValue({
-        allowed: false,
-        resetIn: 30000,
-      });
-
-      const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockMCPClientPool.listAllToolSchemas).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Query Validation', () => {
-    it('should_return400_when_searchQueryTooLong', async () => {
-      const longQuery = 'a'.repeat(101); // MAX is 100
-      const mockRequest = createMockRequest('GET', `/mcp/tools?q=${longQuery}`);
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(400, {
-        'Content-Type': 'application/json',
-      });
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.error).toContain('too long');
-      expect(body.query).toBe(longQuery);
-    });
-
-    it('should_return400_when_searchQueryHasInvalidCharacters', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=<script>alert()</script>');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(400, {
-        'Content-Type': 'application/json',
-      });
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.error).toContain('Invalid characters');
-    });
-
-    it('should_allowValidCharacters_when_validating', async () => {
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=code-review_2024');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(200, {
-        'Content-Type': 'application/json',
-      });
-    });
-  });
-
-  describe('Timeout Handling', () => {
-    it('should_return500_when_discoveryTimesOut', async () => {
-      // Mock listAllToolSchemas to hang longer than timeout (500ms)
-      vi.spyOn(mockMCPClientPool, 'listAllToolSchemas').mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(mockTools), 1000))
-      );
-
-      const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(500, {
-        'Content-Type': 'application/json',
-      });
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.error).toContain('timeout');
-    });
-
-    it('should_clearTimeout_when_requestCompletesBeforeTimeout', async () => {
-      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
-
-      const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      // Timeout should be cleared to prevent memory leaks
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-    });
-  });
-
-  describe('Audit Logging', () => {
-    it('should_logDiscoveryRequest_when_successful', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-      const mockRequest = createMockRequest('GET', '/mcp/tools?q=test');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      // Verify audit log emitted
-      expect(consoleSpy).toHaveBeenCalled();
-      const logCalls = consoleSpy.mock.calls.map((call) => call[0]);
-      const discoveryLog = logCalls.find((log) =>
-        typeof log === 'string' && log.includes('discovery')
-      );
-
-      expect(discoveryLog).toBeDefined();
-      if (discoveryLog) {
-        const logData = JSON.parse(discoveryLog);
-        expect(logData.action).toBe('discovery');
-        expect(logData.endpoint).toBe('/mcp/tools');
-        expect(logData.searchTerms).toContain('test');
-        expect(logData.resultsCount).toBeDefined();
-      }
-
-      consoleSpy.mockRestore();
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('should_return500_when_mcpClientPoolThrows', async () => {
-      vi.spyOn(mockMCPClientPool, 'listAllToolSchemas').mockRejectedValue(
-        new Error('MCP server error')
-      );
-
-      const mockRequest = createMockRequest('GET', '/mcp/tools');
-      const mockResponse = createMockResponse();
-
-      await handler.handle(mockRequest, mockResponse, 'valid-token');
-
-      expect(mockResponse.writeHead).toHaveBeenCalledWith(500, {
-        'Content-Type': 'application/json',
-      });
-
-      const body = JSON.parse(getResponseBody(mockResponse));
-      expect(body.error).toContain('Discovery request failed');
-    });
-  });
+  function getResponseBody(res: MockServerResponse): string {
+    return res._chunks.join('');
+  }
 });
-
-// ============================================================================
-// Test Helpers
-// ============================================================================
-
-interface MockServerResponse extends ServerResponse {
-  _chunks: string[];
-}
-
-function createMockRequest(method: string, url: string): IncomingMessage {
-  return {
-    method,
-    url,
-    headers: {},
-  } as IncomingMessage;
-}
-
-function createMockResponse(): MockServerResponse {
-  const chunks: string[] = [];
-
-  const mock = {
-    writeHead: vi.fn(),
-    end: vi.fn((data?: string) => {
-      if (data) chunks.push(data);
-    }),
-    _chunks: chunks,
-  } as unknown as MockServerResponse;
-
-  return mock;
-}
-
-function getResponseBody(res: MockServerResponse): string {
-  return res._chunks.join('');
-}

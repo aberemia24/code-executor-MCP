@@ -11,6 +11,8 @@ import * as crypto from 'crypto';
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { getDenoPath, getSamplingConfig, getAllowedTools, getAllowedWritePaths, getAllowedNetworkHosts } from '../config/loader.js';
 import { sanitizeOutput, truncateOutput, formatDuration, normalizeError, hashCode, isAllowedPath } from '../utils/utils.js';
+import * as path from 'path';
+import * as os from 'os';
 import { MCPProxyServer } from '../core/server/mcp-proxy-server.js';
 import { StreamingProxy } from '../core/middleware/streaming-proxy.js';
 import { SamplingBridgeServer } from '../core/server/sampling-bridge-server.js';
@@ -277,7 +279,7 @@ globalThis.discoverMCPTools = async (options?: { search?: string[] }): Promise<T
  * const schema = await getToolSchema('mcp__filesystem__read_file');
  * if (schema) {
  *   console.log('Tool description:', schema.description);
- *   console.log('Tool parameters:', schema.parameters);
+ *   console.log('Tool input schema:', schema.inputSchema);
  * }
  */
 globalThis.getToolSchema = async (toolName: string): Promise<ToolSchema | null> => {
@@ -476,6 +478,20 @@ await import('file://${userCodeFile}');
     // SECURITY: Add V8 memory limit to prevent memory exhaustion attacks
     // Limits heap to prevent allocation bombs
     denoArgs.push(`--v8-flags=--max-old-space-size=${SANDBOX_MEMORY_LIMIT_MB}`);
+
+    // Enable import map for sandbox wrappers
+    const wrappersDir = path.join(os.homedir(), '.code-executor', 'wrappers', 'sandbox');
+    const importMapPath = path.join(wrappersDir, 'import_map.json');
+
+    // Check if import map exists (it might not if no wrappers generated yet)
+    try {
+      await fs.access(importMapPath);
+      denoArgs.push(`--import-map=${importMapPath}`);
+      // Allow reading the wrappers directory
+      denoArgs.push(`--allow-read=${wrappersDir}`);
+    } catch {
+      // Import map doesn't exist, skip
+    }
 
     // Always allow /tmp for temp file storage
     const readPaths = [...new Set([...(options.permissions.read ?? []), '/tmp'])];

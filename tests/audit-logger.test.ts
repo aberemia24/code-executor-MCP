@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { AuditLogger } from '../src/audit/audit-logger.js';
-import type { AuditLogEntry } from '../src/interfaces/audit-logger.js';
+import { AuditLogger } from '../src/observability/audit-logger.js';
+import type { AuditLogEntry } from '../src/observability/interfaces/audit-logger.js';
 
 // Test directory for audit logs (will be cleaned up after tests)
 const TEST_LOG_DIR = path.join(process.cwd(), '.test-audit-logs');

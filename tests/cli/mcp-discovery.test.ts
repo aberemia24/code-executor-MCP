@@ -20,14 +20,21 @@ vi.mock('node:child_process', () => ({
   exec: vi.fn(),
 }));
 
+// Mock prompts to avoid hanging tests
+vi.mock('prompts', () => ({
+  default: vi.fn(),
+}));
+
 import * as fs from 'node:fs/promises';
 import { exec } from 'node:child_process';
+import prompts from 'prompts';
 
 describe('MCPDiscoveryService', () => {
   let service: MCPDiscoveryService;
 
   beforeEach(() => {
     service = new MCPDiscoveryService();
+    vi.mocked(prompts).mockResolvedValue({ path: '' });
     vi.clearAllMocks();
   });
 

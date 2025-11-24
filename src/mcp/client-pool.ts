@@ -674,12 +674,14 @@ export class MCPClientPool implements IToolSchemaProvider {
         }
 
         // Transform CachedToolSchema to ToolSchema format
-        // inputSchema → parameters, description? → description (required), outputSchema (optional)
+        // Maintain inputSchema property for template compatibility
         return {
           name: fullToolName,
           description: schema.description ?? '',
-          parameters: schema.inputSchema,
+          inputSchema: schema.inputSchema,
           outputSchema: schema.outputSchema, // Graceful fallback: undefined if not present
+          // Backward compatibility: some callers still expect `parameters`
+          parameters: schema.inputSchema,
         } as ToolSchema;
       } catch (error) {
         // Resilient aggregation: log error but continue with other tools

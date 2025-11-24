@@ -8,12 +8,12 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ToolExecutionHandler } from '../../src/handlers/tool-execution-handler.js';
-import { AllowlistValidator, ToolCallTracker } from '../../src/proxy-helpers.js';
-import type { MCPClientPool } from '../../src/mcp-client-pool.js';
-import type { SchemaCache } from '../../src/schema-cache.js';
-import { SchemaValidator } from '../../src/schema-validator.js';
-import { MetricsExporter } from '../../src/metrics-exporter.js';
+import { ToolExecutionHandler } from '../../src/core/handlers/tool-execution-handler.js';
+import { AllowlistValidator, ToolCallTracker } from '../../src/mcp/proxy-helpers.js';
+import type { MCPClientPool } from '../../src/mcp/client-pool.js';
+import type { SchemaCache } from '../../src/validation/schema-cache.js';
+import { SchemaValidator } from '../../src/validation/schema-validator.js';
+import { MetricsExporter } from '../../src/observability/metrics-exporter.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 
 describe('ToolExecutionHandler', () => {

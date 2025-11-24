@@ -8,10 +8,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { HealthCheckHandler } from '../../src/handlers/health-check-handler.js';
-import type { MCPClientPool } from '../../src/mcp-client-pool.js';
-import type { SchemaCache } from '../../src/schema-cache.js';
-import { MetricsExporter } from '../../src/metrics-exporter.js';
+import { HealthCheckHandler } from '../../src/core/handlers/health-check-handler.js';
+import type { MCPClientPool } from '../../src/mcp/client-pool.js';
+import type { SchemaCache } from '../../src/validation/schema-cache.js';
+import { MetricsExporter } from '../../src/observability/metrics-exporter.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 
 describe('HealthCheckHandler', () => {

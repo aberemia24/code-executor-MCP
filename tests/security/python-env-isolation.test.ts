@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { executePythonInSandbox } from '../../src/python-executor.js';
-import { MCPClientPool } from '../../src/mcp-client-pool.js';
-import { initConfig } from '../../src/config.js';
+import { executePythonInSandbox } from '../../src/executors/python-executor.js';
+import { MCPClientPool } from '../../src/mcp/client-pool.js';
+import { initConfig } from '../../src/config/loader.js';
 
 describe('Python Environment Isolation (VULN-003 Fix)', () => {
   let mcpClientPool: MCPClientPool;

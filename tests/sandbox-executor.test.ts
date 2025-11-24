@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { executeTypescriptInSandbox } from '../src/executors/sandbox-executor.js';
 import { initConfig } from '../src/config/loader.js';
-import type { MCPClientPool } from '../src/mcp-client-pool.js';
+import type { MCPClientPool } from '../src/mcp/client-pool.js';
 import type { SandboxOptions } from '../src/types.js';
 
 describe('Discovery Function Timeout Fix (US6)', () => {
@@ -17,7 +17,7 @@ describe('Discovery Function Timeout Fix (US6)', () => {
 
   beforeAll(async () => {
     // Initialize configuration for sandbox execution
-    await initConfig({});
+    await initConfig();
   });
 
   beforeEach(() => {
@@ -257,7 +257,7 @@ describe('Temp File Integrity Checks (P0 Security)', () => {
   let mockMCPClientPool: MCPClientPool;
 
   beforeAll(async () => {
-    await initConfig({});
+    await initConfig();
   });
 
   beforeEach(() => {

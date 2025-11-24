@@ -23,6 +23,9 @@ coverage/
 .claude/
 .cursor/
 .codex/
+.gemini/
+.github/
+.agent/
 
 # BMAD Framework (user-specific)
 bmad/

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { MetricsExporter } from '../src/metrics-exporter';
+import { MetricsExporter } from '../src/observability/metrics-exporter.js';
 
 describe('MetricsExporter', () => {
   let metricsExporter: MetricsExporter;

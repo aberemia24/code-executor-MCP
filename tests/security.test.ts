@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, beforeAll } from 'vitest';
-import { SecurityValidator } from '../src/security.js';
+import { SecurityValidator } from '../src/validation/security-validator.js';
 import { initConfig } from '../src/config/loader.js';
 import * as fs from 'fs/promises';
 

@@ -49,8 +49,10 @@ export interface ToolSchema {
    *
    * Follows JSON Schema Draft 7 specification.
    * Defines required/optional parameters, types, and constraints.
+   *
+   * Note: Property name matches MCP SDK convention (inputSchema, not parameters).
    */
-  parameters: JSONSchema7;
+  inputSchema: JSONSchema7;
 
   /**
    * JSON Schema definition for tool response structure (optional)

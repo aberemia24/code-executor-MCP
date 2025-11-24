@@ -509,6 +509,132 @@ export class WrapperGenerator {
   }
 
   /**
+   * Generate sandbox-compatible wrapper for an MCP server
+   *
+   * **FLOW:**
+   * 1. Validate MCP name
+   * 2. Calculate schema hash
+   * 3. Load sandbox-wrapper.hbs template
+   * 4. Render template
+   * 5. Write to ~/.code-executor/wrappers/sandbox/mcp-<name>.ts
+   *
+   * @param mcp MCP server configuration
+   * @returns Generation result
+   */
+  async generateSandboxWrapper(
+    mcp: MCPServerSelection,
+    regenOption: 'missing' | 'force' = 'force'
+  ): Promise<WrapperGenerationResult> {
+    this.validateMCPName(mcp.name);
+
+    try {
+      const schemaHash = this.calculateSchemaHash(mcp.tools || []);
+      const outputFileName = `mcp-${mcp.name}.ts`;
+      const sandboxDir = path.join(this.outputDir, 'sandbox');
+      const outputPath = path.join(sandboxDir, outputFileName);
+
+      await fs.mkdir(sandboxDir, { recursive: true });
+
+      const templatePath = path.join(this.templateDir, 'sandbox-wrapper.hbs');
+      const templateSource = await fs.readFile(templatePath, 'utf-8').catch((error: unknown) => {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+          throw new Error(`Template not found: ${templatePath}`);
+        }
+        throw error;
+      });
+
+      const template = this.handlebars.compile(templateSource, {
+        noEscape: false,
+        strict: true,
+      });
+
+      const templateData = {
+        mcpName: mcp.name,
+        description: mcp.description || '',
+        toolCount: mcp.toolCount || (mcp.tools?.length ?? 0),
+        tools: mcp.tools || [],
+        schemaHash,
+        generatedAt: new Date().toISOString(),
+      };
+
+      const rendered = template(templateData);
+
+      if (regenOption === 'missing') {
+        try {
+          await fs.stat(outputPath);
+          return {
+            success: true,
+            mcpName: mcp.name,
+            language: 'typescript',
+            outputPath,
+            schemaHash,
+            generatedAt: templateData.generatedAt,
+            skipped: true,
+          };
+        } catch {
+          // File doesn't exist, proceed
+        }
+      }
+
+      await fs.writeFile(outputPath, rendered, 'utf-8');
+      await fs.chmod(outputPath, 0o644);
+
+      return {
+        success: true,
+        mcpName: mcp.name,
+        language: 'typescript',
+        outputPath,
+        schemaHash,
+        generatedAt: templateData.generatedAt,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        mcpName: mcp.name,
+        language: 'typescript',
+        outputPath: '',
+        schemaHash: '',
+        generatedAt: new Date().toISOString(),
+        errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Generate Deno import map for sandbox wrappers
+   *
+   * **PURPOSE:** Maps 'mcp/' to './' for sandbox imports
+   * **LOCATION:** ~/.code-executor/wrappers/sandbox/import_map.json
+   * **IDEMPOTENCY:** Only writes if content has changed
+   */
+  async generateImportMap(_servers: string[]): Promise<void> {
+    const sandboxDir = path.join(this.outputDir, 'sandbox');
+    await fs.mkdir(sandboxDir, { recursive: true });
+
+    // Map 'mcp/' to current directory './'
+    // This allows imports like: import { readFile } from 'mcp/mcp-filesystem.ts'
+    const imports: Record<string, string> = {
+      'mcp/': './',
+    };
+
+    const importMap = { imports };
+    const importMapPath = path.join(sandboxDir, 'import_map.json');
+    const newContent = JSON.stringify(importMap, null, 2);
+
+    try {
+      const existingContent = await fs.readFile(importMapPath, 'utf-8');
+      if (existingContent === newContent) {
+        return; // Skip write if unchanged
+      }
+    } catch {
+      // File doesn't exist, proceed to write
+    }
+
+    await fs.writeFile(importMapPath, newContent, 'utf-8');
+  }
+
+  /**
    * Get output filename for generated wrapper
    *
    * **FORMAT:**

@@ -22,7 +22,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
     it('should_generateUUIDv4_when_noCorrelationIdProvided', () => {
       const req = {
         headers: {}
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -47,7 +47,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
       const ids = new Set<string>();
 
       for (let i = 0; i < 100; i++) {
-        const req = { headers: {} } as IncomingMessage;
+        const req = { headers: {} } as unknown as IncomingMessage;
         const res = {
           setHeader: vi.fn((name: string, value: string) => {
             if (name === 'X-Correlation-ID') {
@@ -83,7 +83,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': clientId
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -107,7 +107,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': clientId // Node.js normalized (lowercase)
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -126,7 +126,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': 'invalid-uuid-format'
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -157,7 +157,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
    */
   describe('Response Header Propagation (T116)', () => {
     it('should_returnCorrelationID_when_responseHeadersSet', () => {
-      const req = { headers: {} } as IncomingMessage;
+      const req = { headers: {} } as unknown as IncomingMessage;
       const res = {
         setHeader: vi.fn(),
         headersSent: false
@@ -174,7 +174,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
     });
 
     it('should_notSetHeader_when_headersAlreadySent', () => {
-      const req = { headers: {} } as IncomingMessage;
+      const req = { headers: {} } as unknown as IncomingMessage;
       const res = {
         setHeader: vi.fn(),
         headersSent: true // Headers already sent
@@ -195,7 +195,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': clientId
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -223,7 +223,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
     it('should_attachCorrelationID_when_requestProcessed', () => {
       const req = {
         headers: {}
-      } as IncomingMessage & { correlationId?: string };
+      } as unknown as IncomingMessage & { correlationId?: string };
 
       const res = {
         setHeader: vi.fn(),
@@ -247,7 +247,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': clientId
         }
-      } as IncomingMessage & { correlationId?: string };
+      } as unknown as IncomingMessage & { correlationId?: string };
 
       const res = {
         setHeader: vi.fn(),
@@ -263,7 +263,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
     });
 
     it('should_callNext_when_middlewareCompletes', () => {
-      const req = { headers: {} } as IncomingMessage;
+      const req = { headers: {} } as unknown as IncomingMessage;
       const res = {
         setHeader: vi.fn(),
         headersSent: false
@@ -287,7 +287,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': ''
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -311,7 +311,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': '   '
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),
@@ -337,7 +337,7 @@ describe('CorrelationIdMiddleware (US11: FR-14)', () => {
         headers: {
           'x-correlation-id': [clientId, 'another-id'] // Array of values
         }
-      } as IncomingMessage;
+      } as unknown as IncomingMessage;
 
       const res = {
         setHeader: vi.fn(),

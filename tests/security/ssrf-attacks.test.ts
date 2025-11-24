@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateUrl, isBlockedHost } from '../../src/network-security.js';
+import { validateUrl, isBlockedHost } from '../../src/validation/network-security.js';
 
 describe('SSRF Attack Protection (P0 Security)', () => {
   describe('AWS Metadata Endpoint Attacks', () => {

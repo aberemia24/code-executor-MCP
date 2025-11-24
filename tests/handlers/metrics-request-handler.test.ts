@@ -8,8 +8,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MetricsRequestHandler } from '../../src/handlers/metrics-request-handler.js';
-import { MetricsExporter } from '../../src/metrics-exporter.js';
+import { MetricsRequestHandler } from '../../src/core/handlers/metrics-request-handler.js';
+import { MetricsExporter } from '../../src/observability/metrics-exporter.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 
 describe('MetricsRequestHandler', () => {

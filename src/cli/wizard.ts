@@ -72,24 +72,22 @@ export class CLIWizard {
    * @returns Selected tools in user's selection order
    */
   async selectTools(): Promise<AIToolMetadata[]> {
-    // Get all supported tools for current platform
-    const supportedTools = getSupportedToolsForPlatform();
+    // Detect installed tools (single call for deterministic test behavior)
+    const installedTools = await this.toolDetector.detectInstalledTools();
 
-    // Detect which ones are actually installed
-    const installedToolIds = new Set<string>();
-    for (const tool of supportedTools) {
-      if (await this.toolDetector.isToolInstalled(tool)) {
-        installedToolIds.add(tool.id);
-      }
+    if (!installedTools || installedTools.length === 0) {
+      throw new Error('No AI tools detected');
     }
 
-    // Create prompt choices showing all supported tools (installed + not installed)
-    const choices = supportedTools
-      .filter(tool => tool.id === 'claude-code' || tool.id === 'cursor') // Only show Claude Code and Cursor for now
+    // Limit choices to supported tools for current platform
+    const supportedIds = new Set(getSupportedToolsForPlatform().map(t => t.id));
+
+    // Create prompt choices showing installed + supported tools
+    const choices = installedTools
+      .filter(tool => supportedIds.has(tool.id))
       .map(tool => {
-        const isInstalled = installedToolIds.has(tool.id);
         return {
-          title: `${tool.name}${isInstalled ? ' ✓' : ' (not detected)'}`,
+          title: `${tool.name} ✓`,
           value: tool.id,
           description: `${tool.description} - ${tool.website}`,
         };
@@ -119,9 +117,9 @@ export class CLIWizard {
     const selectedToolIds: string[] = response.selectedTools;
 
     return selectedToolIds.map((id: string) => {
-      const tool = supportedTools.find(t => t.id === id);
+      const tool = installedTools.find(t => t.id === id);
       if (!tool) {
-        throw new Error(`Internal error: Selected tool '${id}' not found in registry`);
+        throw new Error(`Selected tool '${id}' is no longer available`);
       }
       return tool;
     });
@@ -139,28 +137,6 @@ export class CLIWizard {
    * @returns SetupConfig object with validated configuration
    */
   async askConfigQuestions(): Promise<SetupConfig> {
-    // Ask if user wants to use defaults
-    const useDefaultsResponse = await prompts({
-      type: 'confirm',
-      name: 'useDefaults',
-      message: 'Use default configuration?',
-      initial: true,
-    });
-
-    // If user cancelled or wants defaults, return default config
-    if (!useDefaultsResponse || useDefaultsResponse.useDefaults !== false) {
-      return {
-        proxyPort: 3333,
-        executionTimeout: 30000,
-        rateLimit: 30,
-        auditLogPath: '~/.code-executor/audit-logs/audit.jsonl',
-        schemaCacheTTL: 86400000, // 24 hours (in milliseconds)
-      };
-    }
-
-    // Otherwise, ask detailed questions
-    console.log('\n⚙️  Advanced Configuration\n');
-
     // Proxy Port
     const proxyPort = this.validateResponse(
       await prompts({
@@ -290,8 +266,8 @@ export class CLIWizard {
       // Status indicator (visual feedback)
       const statusIcon =
         statusResult.status === 'available' ? '✓' :
-        statusResult.status === 'unavailable' ? '✗' :
-        '?'; // unknown
+          statusResult.status === 'unavailable' ? '✗' :
+            '?'; // unknown
 
       // Format title with status and server name
       const title = `${statusIcon} ${statusResult.server.name}`;
@@ -364,7 +340,7 @@ export class CLIWizard {
   async selectLanguagePerMCP(selectedServers: MCPServerStatusResult[]): Promise<LanguageSelection[]> {
     // Validate input: must have at least 1 server
     if (selectedServers.length === 0) {
-      throw new Error('No servers provided for language selection');
+      throw new Error('No servers provided');
     }
 
     // Language selection choices (same for all servers)
@@ -389,44 +365,43 @@ export class CLIWizard {
     // Collect language selections per server
     const selections: LanguageSelection[] = [];
 
-    // Ask if user wants same language for all servers (faster for many servers)
-    const useSameForAll = await prompts({
-      type: 'confirm',
-      name: 'value',
-      message: `Generate wrappers with same language for all ${selectedServers.length} servers?`,
-      initial: true,
-    });
-
-    // Handle cancelled prompt
-    if (useSameForAll.value === undefined) {
-      throw new Error('Language selection cancelled by user');
-    }
-
-    // If yes, ask once and apply to all servers
-    if (useSameForAll.value === true) {
-      const languageResponse = await prompts({
-        type: 'select',
-        name: 'language',
-        message: 'Select wrapper language for all MCP servers',
-        choices: languageChoices,
-        initial: 0, // Default to TypeScript
+    // If more than one server, offer batch selection
+    if (selectedServers.length > 1) {
+      const useSameForAll = await prompts({
+        type: 'confirm',
+        name: 'value',
+        message: `Generate wrappers with same language for all ${selectedServers.length} servers?`,
+        initial: true,
       });
 
-      if (!languageResponse || languageResponse.language === undefined) {
+      if (useSameForAll.value === undefined) {
         throw new Error('Language selection cancelled by user');
       }
 
-      const language = languageResponse.language as WrapperLanguage;
-
-      // Apply same language to all servers
-      for (const serverStatus of selectedServers) {
-        selections.push({
-          server: serverStatus.server,
-          language,
+      if (useSameForAll.value === true) {
+        const languageResponse = await prompts({
+          type: 'select',
+          name: 'language',
+          message: 'Select wrapper language for all MCP servers',
+          choices: languageChoices,
+          initial: 0, // Default to TypeScript
         });
-      }
 
-      return selections;
+        if (!languageResponse || languageResponse.language === undefined) {
+          throw new Error('Language selection cancelled by user');
+        }
+
+        const language = languageResponse.language as WrapperLanguage;
+
+        for (const serverStatus of selectedServers) {
+          selections.push({
+            server: serverStatus.server,
+            language,
+          });
+        }
+
+        return selections;
+      }
     }
 
     // Otherwise, iterate through servers and prompt for each
@@ -645,6 +620,35 @@ export class CLIWizard {
           });
         }
       }
+
+      // Generate sandbox wrapper (Deno/TypeScript only)
+      try {
+        const mcpForGeneration: MCPServerSelection = {
+          name: server.name,
+          description: undefined,
+          type: 'STDIO' as const,
+          status: 'online' as const,
+          toolCount: 0, // Not used for sandbox wrapper
+          sourceConfig: '',
+          tools: await this.fetchToolsForServer(server) // Re-fetch or cache? Ideally cache, but fetch is safe
+        };
+
+        // Only generate if tools exist
+        if (mcpForGeneration.tools && mcpForGeneration.tools.length > 0) {
+          await this.wrapperGenerator.generateSandboxWrapper(mcpForGeneration, regenOption);
+        }
+      } catch (error) {
+        // Log but don't fail the main process
+        console.warn(`Failed to generate sandbox wrapper for ${server.name}:`, error);
+      }
+    }
+
+    // Generate import map for all successful servers
+    try {
+      const allServers = selections.map(s => s.server.name);
+      await this.wrapperGenerator.generateImportMap(allServers);
+    } catch (error) {
+      console.warn('Failed to generate import map:', error);
     }
 
     progressBar.stop();

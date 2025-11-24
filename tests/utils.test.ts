@@ -14,7 +14,7 @@ import {
   sanitizeOutput,
   normalizeError,
   formatExecutionResultForCli,
-} from '../src/utils.js';
+} from '../src/utils/utils.js';
 import { ErrorType } from '../src/types.js';
 
 describe('truncateOutput', () => {

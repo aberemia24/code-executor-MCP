@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { FileSystemService } from '../../src/services/filesystem';
+import { FileSystemService } from '../../src/utils/filesystem';
 
 describe('FileSystemService', () => {
   let fsService: FileSystemService;
